@@ -3,7 +3,7 @@
   "name": "Token Usage",
   "version": "1.0.1",
   "minAppVersion": "1.4.0",
-  "description": "Live token usage tracking for Claude Code — reads local session logs and displays input, output and cache token counts directly in Obsidian.",
+  "description": "Live token usage tracking for Claude Code — reads local session logs and displays input, output and cache token counts directly in your sidebar.",
   "author": "Björn-Olaf Lange",
   "authorUrl": "https://github.com/beolatn",
   "isDesktopOnly": true
