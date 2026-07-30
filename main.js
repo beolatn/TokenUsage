@@ -238,7 +238,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       const la  = d.lastAction;
       const sec = el.createEl('div', { cls: 'au-section' });
       const lhdr = sec.createEl('div', { cls: 'au-last-hdr' });
-      lhdr.createEl('span', { cls: 'au-section-title', text: 'Letzte Aktion' });
+      lhdr.createEl('span', { cls: 'au-section-title', text: 'Last Action' });
       lhdr.createEl('span', { cls: 'au-model-chip', text: la.model.replace('claude-', '') });
       sec.createEl('div', {
         cls:  'au-last-tokens',
@@ -246,11 +246,11 @@ class AnthropicUsageView extends obsidian.ItemView {
       });
     }
 
-    // ── Perioden
-    this._renderPeriod(el, 'Diese Session', d.session);
-    this._renderPeriod(el, 'Heute',         d.today);
-    this._renderPeriod(el, '7 Tage',        d.day7);
-    this._renderPeriod(el, '30 Tage',       d.day30);
+    // ── Periods
+    this._renderPeriod(el, 'This Session', d.session);
+    this._renderPeriod(el, 'Today',        d.today);
+    this._renderPeriod(el, '7 Days',       d.day7);
+    this._renderPeriod(el, '30 Days',      d.day30);
   }
 
   _renderChart(parent, days) {

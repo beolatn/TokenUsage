@@ -1,7 +1,7 @@
 {
   "id": "token-usage",
   "name": "Token Usage",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "1.4.0",
   "description": "Live token usage tracking for Claude Code — reads local session logs and displays input, output and cache token counts directly in Obsidian.",
   "author": "Björn-Olaf Lange",
