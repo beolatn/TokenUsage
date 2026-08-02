@@ -1,4 +1,9 @@
-/* ── Anthropic Usage Plugin ── */
+/* ── Token Usage Plugin v1.4.0 ──────────────────────────────────── */
+/*
+   Farb-Philosophie:
+   - Hintergründe, Text, Rahmen: Obsidian CSS-Variablen → automatisch hell/dunkel
+   - Datenfarben (Balken, Werte): fest — in beiden Themes lesbar, visuell konsistent
+*/
 
 :root {
   --au-blue:      #4A90D9;
@@ -11,13 +16,31 @@
   --au-purple-bg: rgba(155,  93, 229, 0.10);
 }
 
+/* ── Logo */
+.au-logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.au-logo-text {
+  font-weight: 700;
+  font-size: 12.5px;
+  letter-spacing: 0.04em;
+  background: linear-gradient(120deg, #4A90D9 0%, #9B5DE5 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 /* ── Container */
 .au-container {
-  padding: 8px 10px 12px;
+  padding: 8px 10px 8px;
   font-size: 11.5px;
   overflow-y: auto;
   height: 100%;
   line-height: 1.4;
+  color: var(--text-normal);
+  background: var(--background-primary);
 }
 
 /* ── Header */
@@ -33,29 +56,82 @@
   letter-spacing: 0.03em;
   color: var(--text-normal);
 }
-.au-refresh-btn {
+.au-header-btns {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.au-refresh-btn,
+.au-report-btn,
+.au-dash-btn {
   background: none;
   border: 1px solid var(--background-modifier-border);
   border-radius: 4px;
   cursor: pointer;
+  line-height: 1.7;
+  color: var(--text-muted);
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.au-refresh-btn {
   padding: 0px 6px 1px;
   font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-muted);
-  transition: color 0.15s, border-color 0.15s;
 }
-.au-refresh-btn:hover { color: var(--au-purple); border-color: var(--au-purple); }
+.au-report-btn {
+  padding: 0px 7px 1px;
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.au-refresh-btn:hover  { color: var(--au-purple); border-color: var(--au-purple); }
+.au-report-btn:hover   { color: var(--au-blue); border-color: var(--au-blue); background: var(--au-blue-bg); }
+.au-dash-btn:hover     { color: var(--au-amber); border-color: var(--au-amber); background: var(--au-amber-bg); }
 
-/* ── Meta-Zeile (Live) */
+/* Help button — round pill */
+.au-help-btn {
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.au-help-btn:hover,
+.au-help-active {
+  color: var(--au-blue);
+  border-color: var(--au-blue);
+  background: var(--au-blue-bg);
+}
+
+/* ── Meta-Zeile (Live + Plan-Badge) */
 .au-meta {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
   font-size: 10px;
   margin-bottom: 8px;
   padding-bottom: 7px;
   border-bottom: 1px solid var(--au-purple);
 }
-.au-live { color: var(--au-green); font-variant-numeric: tabular-nums; }
+.au-live {
+  color: var(--au-green);
+  font-variant-numeric: tabular-nums;
+}
+.au-plan-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--au-purple);
+  background: var(--au-purple-bg);
+  border-radius: 3px;
+  padding: 1px 5px;
+  letter-spacing: 0.03em;
+}
 
 /* ── Sections */
 .au-section {
@@ -63,25 +139,24 @@
   padding-bottom: 8px;
   border-bottom: 1px solid var(--background-modifier-border);
 }
-.au-section:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
-
 .au-section-title {
   text-transform: uppercase;
   font-size: 9px;
   letter-spacing: 0.08em;
   font-weight: 700;
   color: var(--text-muted);
+  margin-bottom: 4px;
 }
 
-/* ── Balkenchart */
-.au-chart-section { padding-bottom: 6px; }
+/* ── Balkenchart 7 Tage */
+.au-chart-section { padding-bottom: 4px; }
 
 .au-chart {
   display: flex;
   align-items: flex-end;
   gap: 3px;
   height: 42px;
-  margin-bottom: 2px;
+  margin-bottom: 1px;
 }
 .au-chart-col {
   flex: 1;
@@ -100,12 +175,22 @@
 }
 .au-chart-bar:hover { filter: brightness(1.35); }
 .au-bar-today { border-radius: 3px 3px 0 0; }
+
 .au-chart-lbl {
   font-size: 8.5px;
   color: var(--text-faint);
   margin-top: 2px;
   text-align: center;
   line-height: 1;
+}
+.au-chart-pct {
+  font-size: 7.5px;
+  color: var(--text-faint);
+  margin-top: 1px;
+  text-align: center;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  min-height: 9px; /* Platzhalter auch wenn leer, hält Ausrichtung */
 }
 .au-lbl-today { color: var(--au-blue); font-weight: 700; }
 
@@ -133,8 +218,6 @@
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-
-/* ── Perioden */
 
 /* ── Stat-Zeilen mit Minibalken */
 .au-stat-row {
@@ -175,6 +258,144 @@
 .au-bar-green  { background: var(--au-green); }
 .au-bar-amber  { background: var(--au-amber); }
 
+/* ── Modell-Verteilung ────────────────────────────────────────── */
+.au-model-section { padding-bottom: 6px; }
+
+.au-model-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  gap: 1px;
+  margin: 4px 0 5px;
+}
+.au-model-seg {
+  height: 100%;
+  min-width: 2px;
+  transition: filter 0.15s;
+  cursor: default;
+  border-radius: 0;
+}
+.au-model-seg:first-child { border-radius: 4px 0 0 4px; }
+.au-model-seg:last-child  { border-radius: 0 4px 4px 0; }
+.au-model-seg:only-child  { border-radius: 4px; }
+.au-model-seg:hover { filter: brightness(1.25); }
+
+.au-model-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+}
+.au-model-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+.au-model-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Footer: Reset-Countdown links, Version rechts */
+.au-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 5px;
+  margin-top: 2px;
+}
+.au-reset-countdown {
+  font-size: 9px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  min-width: 1px; /* immer vorhanden, auch wenn leer */
+}
+.au-version {
+  font-size: 9px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+}
+
+/* ── Settings */
+.au-settings-h3 {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 12px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.au-settings-info {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+/* ── Help panel ─────────────────────────────────────────────────── */
+.au-help {
+  padding: 2px 2px 12px;
+}
+.au-help-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--au-purple);
+}
+.au-help-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-normal);
+}
+.au-help-sub {
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+.au-help-section {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.au-help-section:last-of-type { border-bottom: none; }
+.au-help-section-title {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--au-blue);
+  margin-bottom: 3px;
+}
+.au-help-section-body {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-bottom: 2px;
+}
+.au-help-link-wrap {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  text-align: center;
+}
+.au-help-link {
+  font-size: 10.5px;
+  color: var(--au-blue);
+  text-decoration: none;
+  font-weight: 500;
+}
+.au-help-link:hover { text-decoration: underline; }
 
 /* ── States */
 .au-loading {
@@ -183,13 +404,4 @@
   padding: 20px 10px;
   font-style: italic;
   font-size: 11px;
-}
-.au-settings-info {
-  font-size: 10.5px;
-  color: var(--text-muted);
-  margin-top: 12px;
-  padding: 6px 8px;
-  background: var(--background-secondary);
-  border-radius: 4px;
-  word-break: break-all;
 }
