@@ -1,0 +1,51 @@
+# GitHub Actions Release Workflow — Token Usage Plugin
+#
+# Belongs in the GitHub repo at: .github/workflows/release.yml
+#
+# Trigger: push a version tag (e.g. git tag 1.5.0 && git push origin 1.5.0)
+# The workflow then:
+#   1. Checks out the repo at that tag
+#   2. Attests main.js, styles.css, manifest.json (Obsidian review: Artifact Attestations)
+#   3. Creates the GitHub Release and uploads the three files as assets
+#
+# versions.json is intentionally NOT included as a release asset.
+# It lives in the repo only — Obsidian reads it from there, not from the release.
+#
+# Required repository permission: Settings → Actions → Workflow permissions
+#   → "Read and write permissions" + "Allow GitHub Actions to create attestations"
+
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write      # create release + upload assets
+  id-token: write      # OIDC token required for attestations
+  attestations: write  # store attestation records on GitHub
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            styles.css
+            manifest.json
+
+      - name: Create GitHub Release and upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            main.js
+            manifest.json
+            styles.css

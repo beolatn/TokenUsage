@@ -11,10 +11,13 @@ Instead of relying on API access or external dashboards, Token Usage reads Claud
 - Live sidebar panel with token breakdown across five time ranges
 - Separate display of all four token types: Input, Output, Cache Write (C.Write), Cache Read (C.Read)
 - Rolling 5-hour session window matching Claude Code's internal rate-limit window
+- Context sub-labels under each section title — shows scope at a glance ("Rolling window · counts toward rate limit", "Started yesterday · spans multiple days", "Calendar day · since midnight")
+- Logarithmic scale for minibar widths — keeps all four token types visually proportional even across large magnitude differences
 - 7-day bar chart with model distribution — stacked by Haiku, Sonnet, Opus, Fable
-- HTML dashboard with 30-day charts, model donut, top sessions table, and cache efficiency analysis
+- HTML dashboard with 30-day charts, model donut, top sessions table, and cache efficiency analysis — with direct link to the help page
 - Markdown report export directly into your vault
-- Built-in Help panel with full glossary and cost reference
+- Built-in Help panel with full glossary and cost reference, including "The three time views" entry
+- "← Back" button in the header returns from the glossary to the data view
 - Command Palette integration for all major actions
 - No API key required — reads local files only
 - Local-first and privacy-friendly
@@ -66,11 +69,18 @@ A live file watcher detects new activity the moment Claude Code writes a respons
 
 ### Last 5 Hour Session
 
-A rolling window covering the past 5 hours — matching Claude Code's own rate-limit period. Shows Input, Output, C.Write, and C.Read as separate rows.
+A rolling window covering the past 5 hours — matching Claude Code's own rate-limit period. Shows Input, Output, C.Write, and C.Read as separate rows. Sub-label: "Rolling window · counts toward rate limit".
 
 ### This Session / Today / 7 Days / 30 Days
 
-Four time-range sections, each showing the same four token rows with a small intensity bar for quick visual comparison.
+Four time-range sections, each showing the same four token rows. A small logarithmic bar next to each value keeps all token types visually readable even when magnitudes differ by orders of magnitude (e.g. Input at a few hundred vs C.Read in the millions).
+
+**This Session** and **Today** carry a dynamic sub-label explaining their scope:
+
+- **This Session** — shows the session start time ("Started today at 09:27" or "Started yesterday · spans multiple days"). A session in Claude Code can span multiple calendar days — so "This Session" may be larger than "Today". This is expected.
+- **Today** — always shows "Calendar day · since midnight".
+
+These three views — Last 5 Hour Session, This Session, and Today — are independent cuts through the same data. They do not automatically nest inside each other. See the [help page](https://www.langeatn.de/docs/token-usage/) for a full explanation.
 
 ### Models (last 7 days)
 
@@ -114,13 +124,16 @@ The dashboard uses Chart.js (loaded once from CDN) and works offline after the f
 
 ## Help Panel
 
-The "?" button in the sidebar header toggles between the data view and a built-in glossary. The glossary explains:
+The "?" button in the sidebar header toggles between the data view and a built-in glossary. A "← Back" button appears in the header while the glossary is open — click it to return to the data view without hunting for the "?" button again.
+
+The glossary explains:
 
 - What a token is
 - The difference between Input and Output
 - What C.Write and C.Read mean and why they matter
 - How to read the Reuse Factor
-- What the 5-hour session window represents
+- What the 5-hour session window represents and why the countdown shows a tilde (~)
+- How the three time views (Last 5 Hour Session, This Session, Today) relate to each other
 - How the model colors map to model families
 - How sessions are counted
 - Approximate API cost reference per model
@@ -209,9 +222,23 @@ Your Claude Code usage data stays on your machine.
 
 ## Known Behavior
 
+**Claude Code updates may briefly affect historical data.**
+
+Token Usage reads the JSONL files that Claude Code writes locally. When Anthropic ships a Claude Code update that changes how session data is recorded or how internal telemetry is counted, historical values in the 30-day view may temporarily show anomalies.
+
+We review Anthropic's release notes with each Claude Code update and adapt the plugin where needed. Significant compatibility changes are documented in the changelog.
+
+> **Note for Claude Code v2.1.196 (August 2026):** This update fixed a bug where parallel requests were double-counted in telemetry output. Sessions recorded before the fix may show slightly elevated values in the 30-day view. This resolves automatically as those sessions age out of the 30-day window — expected by approximately end of August 2026.
+
+---
+
 **Version number in the sidebar footer shows an outdated version after an update.**
 
 This is not a code bug. Obsidian caches the loaded plugin manifest in memory. Toggling the plugin off and on may not fully reinitialize the manifest object. Fix: perform a full Obsidian restart after updating the plugin files. The correct version will display after restart.
+
+**The 5-hour reset countdown may differ from Claude's own display.**
+
+The footer shows "Claude 5h resets in: ~Xh Ym". The tilde (~) is intentional — it signals an approximation. Claude Code writes session data to local files after each response completes, not at the moment you send your first message. A long first response (context loading, file reading) can take 10 to 25 minutes before anything is written to the log. The plugin's countdown therefore starts from the first recorded timestamp, which may lag behind the actual session start. For the precise reset time, check the plan usage section in Claude Code or on claude.ai.
 
 ---
 

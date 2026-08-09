@@ -21,6 +21,12 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  padding: 2px 8px 2px 5px;
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--background-primary), var(--background-primary)) padding-box,
+    linear-gradient(120deg, #4A90D9 0%, #9B5DE5 100%) border-box;
+  border: 1px solid transparent;
 }
 .au-logo-text {
   font-weight: 700;
@@ -43,12 +49,18 @@
   background: var(--background-primary);
 }
 
-/* ── Header */
+/* ── Header — sticky so logo and buttons stay visible when panel is small */
 .au-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--background-primary);
+  padding-top: 2px;
+  padding-bottom: 4px;
+  margin-bottom: 0;
 }
 .au-title {
   font-weight: 700;
@@ -76,7 +88,8 @@
   padding: 0px 6px 1px;
   font-size: 13px;
 }
-.au-report-btn {
+.au-report-btn,
+.au-dash-btn {
   padding: 0px 7px 1px;
   font-size: 10.5px;
   font-weight: 500;
@@ -145,7 +158,14 @@
   letter-spacing: 0.08em;
   font-weight: 700;
   color: var(--text-muted);
+  margin-bottom: 1px;
+}
+.au-section-sub {
+  font-size: 8.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
   margin-bottom: 4px;
+  letter-spacing: 0.02em;
 }
 
 /* ── Balkenchart 7 Tage */
@@ -236,6 +256,7 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   text-align: right;
+  white-space: nowrap;
 }
 .au-text-blue   { color: var(--au-blue); }
 .au-text-green  { color: var(--au-green); }
@@ -243,20 +264,21 @@
 .au-text-purple { color: var(--au-purple); }
 
 .au-mini-bar-wrap {
-  height: 4px;
+  height: 6px;
   background: var(--background-modifier-border);
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
 }
 .au-mini-bar {
   height: 100%;
-  border-radius: 2px;
+  border-radius: 3px;
   transition: width 0.4s ease;
   min-width: 2px;
 }
 .au-bar-blue   { background: var(--au-blue); }
 .au-bar-green  { background: var(--au-green); }
 .au-bar-amber  { background: var(--au-amber); }
+.au-bar-purple { background: var(--au-purple); }
 
 /* ── Modell-Verteilung ────────────────────────────────────────── */
 .au-model-section { padding-bottom: 6px; }
@@ -344,6 +366,22 @@
 .au-help {
   padding: 2px 2px 12px;
 }
+.au-back-btn {
+  background: var(--au-purple-bg);
+  border: 1px solid var(--au-purple);
+  border-radius: 4px;
+  padding: 0px 7px 1px;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.7;
+  color: var(--au-purple);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.au-back-btn:hover {
+  background: var(--au-purple-bg);
+  filter: brightness(1.2);
+}
 .au-help-intro {
   display: flex;
   flex-direction: column;
@@ -381,7 +419,8 @@
   font-size: 10px;
   color: var(--text-muted);
   line-height: 1.55;
-  margin-bottom: 2px;
+  margin-top: 0;
+  margin-bottom: 3px;
 }
 .au-help-link-wrap {
   margin-top: 10px;

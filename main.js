@@ -1,6 +1,11 @@
 'use strict';
 
 var obsidian = require('obsidian');
+// Node.js `fs` is required here because Claude Code's session data lives outside
+// the Obsidian vault, at ~/.claude/projects/ (JSONL files).
+// The Obsidian vault API only provides access to files inside the vault, so it
+// cannot be used to read these session files. This is the only reason fs is used;
+// all vault reads and writes go through the Obsidian API as expected.
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
@@ -56,7 +61,11 @@ const HELP_SECTIONS = [
   },
   {
     title: '5h Window',
-    body:  'Claude rate-limits usage on a rolling 5-hour window starting from your first request. When the window closes, capacity resets. "↺ Xh Ym" in the footer counts down until the oldest entry in your current window expires.',
+    body:  'Rolling 5-hour window matching Claude\'s rate-limit period. "Claude 5h resets in: ~Xh Ym" counts down to the next reset.\n~ = approximation: session files are written after each response completes, not at session start. May lag 10–25 min. For the precise time, check Claude Code or claude.ai.',
+  },
+  {
+    title: 'The three time views',
+    body:  'Three independent cuts — they do not nest automatically.\n5h Window: rolling, counts toward rate limit.\nThis Session: current session ID, can span multiple days.\nToday: calendar day since midnight.\nSub-labels under each title show the exact scope. Full explanation at langeatn.de/docs/token-usage/',
   },
   {
     title: 'Models',
@@ -93,9 +102,9 @@ function intensityColor(ratio, isToday) {
 
 function fmtTokens(n) {
   if (!n) return '0';
-  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + 'B';
-  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(2) + 'M';
-  if (n >= 1_000)         return (n / 1_000).toFixed(1) + 'K';
+  if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + ' B';
+  if (n >= 1_000_000)     return (n / 1_000_000).toFixed(2) + ' M';
+  if (n >= 1_000)         return (n / 1_000).toFixed(1) + ' K';
   return String(n);
 }
 
@@ -283,10 +292,12 @@ class AnthropicUsageView extends obsidian.ItemView {
       const win5h    = all.filter(e => e.timestamp >= win5hTs);
       const win5hAgg = aggregate(win5h);
 
+      const sessionEntries = curId ? all.filter(e => e.sessionId === curId) : [];
       this.data = {
-        lastAction: all[0] || null,
-        session:    aggregate(curId ? all.filter(e => e.sessionId === curId) : []),
-        today:      aggregate(all.filter(e => e.timestamp >= todayTs)),
+        lastAction:   all[0] || null,
+        session:      aggregate(sessionEntries),
+        sessionStart: sessionEntries.length > 0 ? Math.min(...sessionEntries.map(e => e.timestamp)) : null,
+        today:        aggregate(all.filter(e => e.timestamp >= todayTs)),
         day7:       aggregate(d7),
         day30:      aggregate(all),
         chart7:     groupByDay(d7, 7),
@@ -341,6 +352,12 @@ class AnthropicUsageView extends obsidian.ItemView {
     helpBtn.title   = 'Help — glossary and concept explanations';
     helpBtn.onclick = () => { this.helpVisible = !this.helpVisible; this.render(); };
 
+    if (this.helpVisible) {
+      const backBtn = btnWrap.createEl('button', { cls: 'au-back-btn', text: '← Back' });
+      backBtn.title   = 'Back to data view';
+      backBtn.onclick = () => { this.helpVisible = false; this.render(); };
+    }
+
     // ── Help mode: replace content with glossary
     if (this.helpVisible) {
       this._renderHelp(el);
@@ -377,8 +394,22 @@ class AnthropicUsageView extends obsidian.ItemView {
     this._renderWindow5h(el);
 
     // ── Periods
-    this._renderPeriod(el, 'This Session', d.session);
-    this._renderPeriod(el, 'Today',        d.today);
+    let sessionSub = '';
+    if (d.sessionStart) {
+      const startTs  = d.sessionStart;
+      const todayMid = dayStart(new Date());
+      const start    = new Date(startTs);
+      if (startTs < todayMid) {
+        const daysAgo = Math.floor((todayMid - startTs) / 86_400_000);
+        sessionSub = daysAgo === 1
+          ? 'Started yesterday · spans multiple days'
+          : `Started ${start.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })} · spans multiple days`;
+      } else {
+        sessionSub = `Started today at ${start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+      }
+    }
+    this._renderPeriod(el, 'This Session', d.session,  sessionSub);
+    this._renderPeriod(el, 'Today',        d.today,    'Calendar day · since midnight');
     this._renderPeriod(el, '7 Days',       d.day7);
     this._renderPeriod(el, '30 Days',      d.day30);
 
@@ -387,7 +418,7 @@ class AnthropicUsageView extends obsidian.ItemView {
     const leftSpan = footer.createEl('span', { cls: 'au-reset-countdown' });
     if (d.window5h.oldest) {
       const msLeft = Math.max(0, d.window5h.oldest + 5 * 3_600_000 - Date.now());
-      if (msLeft > 0) leftSpan.textContent = `↺ ${fmtDuration(msLeft)}`;
+      if (msLeft > 0) leftSpan.textContent = `Claude 5h resets in: ~${fmtDuration(msLeft)}`;
     }
     footer.createEl('span', { cls: 'au-version', text: `v${this.plugin.manifest.version}` });
   }
@@ -404,7 +435,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       const s = wrap.createEl('div', { cls: 'au-help-section' });
       s.createEl('div', { cls: 'au-help-section-title', text: sec.title });
       for (const line of sec.body.split('\n')) {
-        s.createEl('p', { cls: 'au-help-section-body', text: line || ' ' });
+        if (line.trim()) s.createEl('p', { cls: 'au-help-section-body', text: line });
       }
     }
 
@@ -469,7 +500,8 @@ class AnthropicUsageView extends obsidian.ItemView {
     const { window5h } = this.data;
     if (window5h.agg.count === 0) return;
     const sec    = parent.createEl('div', { cls: 'au-section' });
-    sec.createEl('div', { cls: 'au-section-title', text: 'Last 5 hour Session' });
+    sec.createEl('div', { cls: 'au-section-title', text: 'Last 5 Hour Session' });
+    sec.createEl('div', { cls: 'au-section-sub',   text: 'Rolling window · counts toward rate limit' });
     const maxVal = Math.max(window5h.agg.input, window5h.agg.output, window5h.agg.cacheCreate, window5h.agg.cacheRead, 1);
     this._statRow(sec, 'Input',   window5h.agg.input,       maxVal, 'blue');
     this._statRow(sec, 'Output',  window5h.agg.output,      maxVal, 'green');
@@ -478,10 +510,11 @@ class AnthropicUsageView extends obsidian.ItemView {
   }
 
   // ── Period section ────────────────────────────────────────────
-  _renderPeriod(parent, title, stats) {
+  _renderPeriod(parent, title, stats, subtitle) {
     if (stats.count === 0) return;
     const sec    = parent.createEl('div', { cls: 'au-section' });
     sec.createEl('div', { cls: 'au-section-title', text: title });
+    if (subtitle) sec.createEl('div', { cls: 'au-section-sub', text: subtitle });
     const maxVal = Math.max(stats.input, stats.output, stats.cacheCreate, stats.cacheRead, 1);
     this._statRow(sec, 'Input',   stats.input,       maxVal, 'blue');
     this._statRow(sec, 'Output',  stats.output,      maxVal, 'green');
@@ -495,7 +528,11 @@ class AnthropicUsageView extends obsidian.ItemView {
     row.createEl('span', { cls: `au-stat-val au-text-${color}`, text: fmtTokens(value) });
     const wrap = row.createEl('div', { cls: 'au-mini-bar-wrap' });
     const bar  = wrap.createEl('div', { cls: `au-mini-bar au-bar-${color}` });
-    bar.style.width = (value / max * 100).toFixed(1) + '%';
+    // Log scale: keeps all non-zero values visible across large magnitude differences
+    const pct = (value > 0 && max > 0)
+      ? (Math.log(1 + value) / Math.log(1 + max) * 100).toFixed(1)
+      : 0;
+    bar.style.width = pct + '%';
   }
 
   // ── Report ────────────────────────────────────────────────────
@@ -739,7 +776,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
         </svg>
         <h1>Token Usage Dashboard</h1>
       </div>
-      <div class="meta">Generated ${generated} &nbsp;·&nbsp; Plugin v${version} &nbsp;·&nbsp; Last 30 days</div>
+      <div class="meta">Generated ${generated} &nbsp;·&nbsp; Plugin v${version} &nbsp;·&nbsp; Last 30 days &nbsp;·&nbsp; <a href="https://www.langeatn.de/docs/token-usage/" target="_blank" rel="noopener" style="color:#C9A227;text-decoration:none;">Help &amp; Glossary ↗</a></div>
     </div>
   </header>
   <div class="cards">
