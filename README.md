@@ -13,11 +13,16 @@ Instead of relying on API access or external dashboards, Token Usage reads Claud
 - Rolling 5-hour session window matching Claude Code's internal rate-limit window
 - Context sub-labels under each section title — shows scope at a glance ("Rolling window · counts toward rate limit", "Started yesterday · spans multiple days", "Calendar day · since midnight")
 - Logarithmic scale for minibar widths — keeps all four token types visually proportional even across large magnitude differences
+- Spike warning — amber badge when today's usage is ≥ 2× your personal 29-day average
+- Collapsible sections — all five time-range sections fold individually, state persists across refreshes
 - 7-day bar chart with model distribution — stacked by Haiku, Sonnet, Opus, Fable
-- HTML dashboard with 30-day charts, model donut, top sessions table, and cache efficiency analysis — with direct link to the help page
+- Rate limit tracking — session and weekly limit hits auto-detected from local JSONL files, with threshold estimates and 6-week billing chart in the dashboard
+- HTML dashboard with 30-day charts, model donut, top sessions table, cache efficiency analysis, and rate limit history
 - Markdown report export directly into your vault
 - Built-in Help panel with full glossary and cost reference, including "The three time views" entry
 - "← Back" button in the header returns from the glossary to the data view
+- Language selection — English, German, and French (community translations welcome)
+- Settings button (⚙) in the header — opens plugin settings with one click
 - Command Palette integration for all major actions
 - No API key required — reads local files only
 - Local-first and privacy-friendly
@@ -80,7 +85,7 @@ Four time-range sections, each showing the same four token rows. A small logarit
 - **This Session** — shows the session start time ("Started today at 09:27" or "Started yesterday · spans multiple days"). A session in Claude Code can span multiple calendar days — so "This Session" may be larger than "Today". This is expected.
 - **Today** — always shows "Calendar day · since midnight".
 
-These three views — Last 5 Hour Session, This Session, and Today — are independent cuts through the same data. They do not automatically nest inside each other. See the [help page](https://www.langeatn.de/docs/token-usage/) for a full explanation.
+These three views — Last 5 Hour Session, This Session, and Today — are independent cuts through the same data. They do not automatically nest inside each other. See the [help page](https://www.langeatn.de/media/token-usage/) for a full explanation.
 
 ### Models (last 7 days)
 
@@ -138,7 +143,7 @@ The glossary explains:
 - How sessions are counted
 - Approximate API cost reference per model
 
-A link at the bottom of the glossary opens the full help page at [langeatn.de/docs/token-usage/](https://www.langeatn.de/docs/token-usage/) in your browser. The page is available in English and German.
+A link at the bottom of the glossary opens the full help page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser. The page is available in English and German.
 
 ---
 
@@ -200,6 +205,7 @@ No additional setup, API keys, or cloud services required.
 
 | Setting | Default | Description |
 |---|---|---|
+| Language | English | Display language for the plugin UI. Switches immediately without restart. Available: English, Deutsch, Français. |
 | Auto-Refresh (seconds) | 30 | Fallback polling interval in addition to the live file watcher |
 | Report path | Token Usage Report.md | Vault-relative path for the generated Markdown report |
 | Dashboard path | Token Usage Dashboard.html | Vault-relative path for the generated HTML dashboard |
@@ -236,6 +242,12 @@ We review Anthropic's release notes with each Claude Code update and adapt the p
 
 This is not a code bug. Obsidian caches the loaded plugin manifest in memory. Toggling the plugin off and on may not fully reinitialize the manifest object. Fix: perform a full Obsidian restart after updating the plugin files. The correct version will display after restart.
 
+**The weekly consumption chart uses Claude's billing week boundary.**
+
+The dashboard's weekly bar chart aligns to Claude's billing cycle: Sunday 18:00 → Sunday 18:00 Europe/Berlin (= Sunday 16:00 UTC). Weeks where the weekly rate limit was reached are highlighted. Token counts in the rate limits table show the full billing-week total for weekly hits and the 5h window total for session hits — these are the metrics that directly correspond to each limit type.
+
+---
+
 **The 5-hour reset countdown may differ from Claude's own display.**
 
 The footer shows "Claude 5h resets in: ~Xh Ym". The tilde (~) is intentional — it signals an approximation. Claude Code writes session data to local files after each response completes, not at the moment you send your first message. A long first response (context loading, file reading) can take 10 to 25 minutes before anything is written to the log. The plugin's countdown therefore starts from the first recorded timestamp, which may lag behind the actual session start. For the precise reset time, check the plan usage section in Claude Code or on claude.ai.
@@ -257,7 +269,7 @@ Contributions, bug reports, feature requests, and suggestions are welcome.
 
 If you encounter a problem or have an idea for improvement, please open an issue in the GitHub repository.
 
-Full documentation and glossary: [langeatn.de/docs/token-usage/](https://www.langeatn.de/docs/token-usage/)
+Full documentation and glossary: [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/)
 
 ---
 
@@ -272,6 +284,50 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 - [Obsidian](https://obsidian.md)
 - [Anthropic Claude Code](https://claude.ai/code)
 - The Obsidian Plugin Community
+
+---
+
+## Changelog
+
+### v1.6.0 — August 2026
+
+- **Multilingual UI** — English, German, and French. Language dropdown in Settings switches immediately without restart. French translation reviewed by a native speaker.
+- **Settings button (⚙)** in the sidebar header — opens the plugin settings tab directly without navigating through the Obsidian menu
+- **Rate limit auto-detection** — session and weekly limit hits are now read automatically from Claude Code's local JSONL files. No manual button needed. The plugin detects the exact moment a limit was reached and which type it was (session vs. weekly)
+- **Dashboard: Rate limits section** — table of all detected limit events with the relevant token metric at the time of the hit (5h window for session limits, full billing-week total for weekly limits), plus empirical estimates for session and weekly limit thresholds derived from your own usage history
+- **Dashboard: Weekly consumption chart** — 6-week bar chart aligned to Claude's billing week boundary (Sunday 18:00 → Sunday 18:00 Europe/Berlin), with visual highlight for weeks where the weekly limit was reached
+- **Spike warning** — amber badge next to Today when daily consumption is ≥ 2× your personal 29-day average (active days only)
+- **Last Action chips** — four colored chips (In / Out / C.Wr / C.Rd) replace the plain-text row in the Last Action section, consistent with the minibar color scheme throughout the sidebar
+- **Collapsible sections** — all five time-range sections can be collapsed individually with a click. State persists across data refreshes
+- **Window cleared indicator** — shows "Window cleared · full 5h available" in green when the 5h window is empty but activity was recorded in the past 6 hours
+- **Bugfix** — zero-token entries are now filtered from the 5h window and no longer affect the countdown or display
+
+### v1.5.0 — August 2026
+
+- **Context sub-labels** under each section title — shows exactly what each time range covers at a glance ("Rolling window · counts toward rate limit", session start time, "Calendar day · since midnight")
+- **← Back button** in the glossary header — returns to the data view without hunting for the ? button
+- **Logarithmic minibar scale** — all four token types (Input, Output, C.Write, C.Read) stay visually readable even across large magnitude differences
+- **Sticky header** — logo and buttons stay pinned when the panel is small or scrolled
+- **Bugfix** — C.Write bar was invisible due to a missing CSS class (`.au-bar-purple`)
+- **New glossary entry** — "The three time views" explains how Last 5 Hour Session, This Session, and Today are independent cuts through the same data
+- **GitHub artifact attestations** — release assets are now cryptographically signed
+
+### v1.4.1 — August 2026
+
+- Redesigned logo header with SVG chart icon and gradient text
+- Built-in glossary panel — toggle with the ? button, explains all token concepts and includes an approximate cost reference
+- HTML dashboard — 30-day charts, model donut, top sessions table, cache efficiency analysis
+- C.Write and C.Read split into separate rows throughout the sidebar
+- 7-day stacked model distribution bar (Haiku / Sonnet / Opus / Fable)
+- Help page at langeatn.de/media/token-usage/ (English and German, auto-detected)
+
+### v1.0.0 – v1.0.2 — July 2026
+
+- Initial release
+- Live file watcher on active Claude Code session
+- Token breakdown across Last Action, This Session, Today, 7 Days, 30 Days
+- Fallback polling interval (configurable)
+- Approved and listed in the Obsidian Community Plugin Directory
 
 ---
 

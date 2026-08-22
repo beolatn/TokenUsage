@@ -122,6 +122,28 @@
   background: var(--au-blue-bg);
 }
 
+/* Settings button — round pill, same weight as help button */
+.au-settings-btn {
+  background: none;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 18px;
+  text-align: center;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.au-settings-btn:hover {
+  color: var(--au-green);
+  border-color: var(--au-green);
+  background: var(--au-green-bg);
+}
+
 /* ── Meta-Zeile (Live + Plan-Badge) */
 .au-meta {
   display: flex;
@@ -152,13 +174,38 @@
   padding-bottom: 8px;
   border-bottom: 1px solid var(--background-modifier-border);
 }
+.au-section-hdr {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 1px;
+}
+.au-section-hdr:hover .au-section-title { color: var(--text-normal); }
+.au-chevron {
+  font-size: 7px;
+  color: var(--text-faint);
+  width: 8px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.au-spike-badge {
+  font-size: 8px;
+  font-weight: 700;
+  background: var(--au-amber-bg);
+  color: var(--au-amber);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 2px;
+  letter-spacing: 0.02em;
+}
 .au-section-title {
   text-transform: uppercase;
   font-size: 9px;
   letter-spacing: 0.08em;
   font-weight: 700;
   color: var(--text-muted);
-  margin-bottom: 1px;
 }
 .au-section-sub {
   font-size: 8.5px;
@@ -166,6 +213,10 @@
   margin-top: 2px;
   margin-bottom: 4px;
   letter-spacing: 0.02em;
+}
+.au-window-cleared {
+  color: var(--au-green);
+  font-weight: 500;
 }
 
 /* ── Balkenchart 7 Tage */
@@ -233,11 +284,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.au-last-tokens {
-  font-size: 10.5px;
-  color: var(--text-muted);
+.au-last-chips {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.au-last-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
+.au-last-chip-lbl { font-weight: 600; opacity: 0.75; }
+.au-last-chip-val { font-weight: 700; }
+.au-last-chip-blue   { background: var(--au-blue-bg);   color: var(--au-blue);   }
+.au-last-chip-green  { background: var(--au-green-bg);  color: var(--au-green);  }
+.au-last-chip-purple { background: var(--au-purple-bg); color: var(--au-purple); }
+.au-last-chip-amber  { background: var(--au-amber-bg);  color: var(--au-amber);  }
 
 /* ── Stat-Zeilen mit Minibalken */
 .au-stat-row {
@@ -322,7 +388,7 @@
   flex-shrink: 0;
 }
 
-/* ── Footer: Reset-Countdown links, Version rechts */
+/* ── Footer: Reset-Countdown links, Limit-Button Mitte, Version rechts */
 .au-footer {
   display: flex;
   justify-content: space-between;
@@ -334,14 +400,17 @@
   font-size: 9px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
-  min-width: 1px; /* immer vorhanden, auch wenn leer */
+  min-width: 1px;
 }
 .au-version {
   font-size: 9px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
+  text-align: right;
 }
+
+
 
 /* ── Settings */
 .au-settings-h3 {
