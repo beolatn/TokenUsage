@@ -10,10 +10,14 @@
   --au-green:     #52B788;
   --au-amber:     #F59E0B;
   --au-purple:    #9B5DE5;
+  --au-red:       #EF4444;
+  --au-gray:      #6B7280;
   --au-blue-bg:   rgba(74,  144, 217, 0.10);
   --au-green-bg:  rgba(82,  183, 136, 0.10);
   --au-amber-bg:  rgba(245, 158,  11, 0.10);
   --au-purple-bg: rgba(155,  93, 229, 0.10);
+  --au-red-bg:    rgba(239,  68,  68, 0.10);
+  --au-gray-bg:   rgba(107, 114, 128, 0.10);
 }
 
 /* ── Logo */
@@ -40,6 +44,13 @@
 
 /* ── Container */
 .au-container {
+  /* box-sizing (Björn, 29.08.2026 — real root cause of the permanent-scrollbar report, present
+     in BOTH Classic and NextGen, not something the rail introduced): with the default
+     content-box, `height:100%` sets the CONTENT box to 100% of the parent, and padding is then
+     added ON TOP — a guaranteed ~16px overflow (this element's own top+bottom padding) no
+     matter how little content is inside. border-box makes `height:100%` include padding, which
+     is what "100% of the available space" actually needs to mean here. */
+  box-sizing: border-box;
   padding: 8px 10px 8px;
   font-size: 11.5px;
   overflow-y: auto;
@@ -200,6 +211,29 @@
   margin-left: 2px;
   letter-spacing: 0.02em;
 }
+/* NextGen-only, additive (Björn, 01.09.2026, Nachschärfungsliste Punkt 6 — Community-Feature
+   "Ausreißer-Badge" etwas prominenter). .au-spike-badge itself is untouched, so Classic (which
+   never adds this modifier class) renders byte-identical to before. */
+.au-spike-badge-ng {
+  font-size: 9.5px;
+  padding: 2px 6px;
+}
+/* ── Verdict glyphs — good/warn/bad/neutral semantic badges, deliberately separate from the
+   au-blue/green/amber/purple data-type colors above so "verdict" (is this number good or bad)
+   is never confused with "which token type is this". Introduced in the UI relaunch (Phase 0);
+   consumed by the NextGen sidebar redesign (later phase) — unused by Classic. */
+.au-verdict {
+  font-size: 8px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: 4px;
+  letter-spacing: 0.02em;
+}
+.au-verdict-good    { background: var(--au-green-bg);  color: var(--au-green); }
+.au-verdict-warn    { background: var(--au-amber-bg);  color: var(--au-amber); }
+.au-verdict-bad     { background: var(--au-red-bg);    color: var(--au-red); }
+.au-verdict-neutral { background: var(--background-modifier-border); color: var(--text-faint); }
 .au-section-title {
   text-transform: uppercase;
   font-size: 9px;
@@ -265,6 +299,69 @@
 }
 .au-lbl-today { color: var(--au-blue); font-weight: 700; }
 
+/* ── Heatmap 7 Tage × 6 Zeitblöcke (nur NextGen, Nachschärfungsliste Punkt 5, 01.09.2026) */
+.au-heatmap-section { padding-bottom: 4px; }
+
+.au-heatmap-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+  margin-bottom: 1px;
+}
+.au-heatmap-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.au-heatmap-cells {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.au-heatmap-cell {
+  width: 100%;
+  height: 6px;
+  border-radius: 2px;
+  cursor: default;
+  transition: filter 0.15s, opacity 0.4s ease;
+}
+.au-heatmap-cell:hover { filter: brightness(1.35); }
+
+.au-heatmap-lbl {
+  font-size: 8.5px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  text-align: center;
+  line-height: 1;
+}
+
+.au-heatmap-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 9px;
+  margin-top: 4px;
+}
+.au-heatmap-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+.au-heatmap-swatch {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.au-heatmap-swatch-high   { background: var(--au-red); }
+.au-heatmap-swatch-medium { background: var(--au-amber); }
+.au-heatmap-swatch-low    { background: var(--au-green); }
+.au-heatmap-swatch-empty  { background: var(--au-gray); }
+
 /* ── Letzte Aktion */
 .au-last-hdr {
   display: flex;
@@ -329,6 +426,161 @@
 .au-text-amber  { color: var(--au-amber); }
 .au-text-purple { color: var(--au-purple); }
 
+/* NextGen sidebar (Phase 2) — same row/column structure as .au-stat-row plus one auto-width
+   column for the optional verdict glyph. Kept as a separate class (not a modification of
+   .au-stat-row above) so Classic's row layout is never touched by this rule. */
+.au-stat-row-ng {
+  grid-template-columns: 36px 46px 1fr auto;
+}
+
+/* NextGen sidebar (Phase 2) — 2x2 tile grid for 7 Days / N Days (Björn, 28.08.2026: those two
+   periods read as "how am I trending", tiles say more at a glance than four raw bars). Theme
+   variables throughout, same pattern as every other NextGen rule — no fixed hex. */
+.au-tile-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 2px;
+}
+.au-tile {
+  background: var(--background-secondary);
+  border-radius: 5px;
+  padding: 6px 8px;
+}
+.au-tile-val {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+.au-tile-lbl {
+  font-size: 8.5px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 1px;
+}
+
+/* KPI-card style (Björn, 01.09.2026, Nachschärfungsliste Punkt 6) — colored left border, bigger
+   bolder value, sparkline underneath, styled after the Dashboard's 5 KPI cards (.kpi-card etc. in
+   _dashHtml()) but through Obsidian theme variables instead of the Dashboard's fixed dark-theme
+   hex values, since the sidebar must keep working in any Obsidian theme. Markup order is now
+   Label → Value → Sparkline (matches the Dashboard cards), the opposite of the plain .au-tile
+   above — position: relative is a positioning anchor for .au-tile-badge below. */
+.au-tile-kpi {
+  position: relative;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--au-blue); /* overridden per tile via inline style */
+  padding: 8px 10px;
+}
+.au-tile-kpi .au-tile-lbl { margin-top: 0; }
+.au-tile-kpi .au-tile-val {
+  font-size: 15px;
+  margin-top: 2px;
+}
+.au-tile-spark {
+  margin-top: 4px;
+  opacity: 0.9;
+  line-height: 0; /* avoids extra inline-svg baseline gap */
+}
+/* Community-Feature "Ausreißer-Badge" (01.09.2026, Punkt 6) — reuses the existing
+   .au-verdict-* color classes (good/warn/bad/neutral), only supplies the pill layout here since
+   .au-tile-badge is applied without the base .au-verdict class (that one is tuned for an inline
+   row-glyph, not a block-level tile badge). */
+.au-tile-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
+/* ── NextGen shell: icon rail + content (UI relaunch v2, Phase A) ─────────────────
+   Fluid by construction: the rail is a fixed 34px icon column, .au-content simply takes the
+   rest via flex, regardless of how wide the Obsidian leaf is resized to.
+
+   .au-container.au-nextgen (Björn, 29.08.2026 — real fix, not a guess): .au-shell used to have
+   height:100%, but it sits AFTER .au-header inside plain-block .au-container — two block
+   children stacking, with .au-shell alone claiming the container's full height on top of
+   whatever .au-header already took. That's a guaranteed permanent overflow equal to the
+   header's height, which is exactly why the sidebar always showed a scrollbar even with
+   nothing to scroll. Fix: .au-container becomes a flex column ONLY in NextGen (new class,
+   toggled from render() — Classic's plain block layout is completely untouched, this rule
+   only exists for `.au-container.au-nextgen`), .au-header keeps its natural size, .au-shell
+   gets the true remainder via flex:1 1 auto + min-height:0 (same flexbug fix as .au-content). */
+.au-container.au-nextgen {
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden; /* only .au-content (inside .au-shell) scrolls now, not this outer level */
+}
+.au-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+  position: relative;
+}
+.au-rail {
+  flex: 0 0 auto;
+  width: 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  border-right: 1px solid var(--background-modifier-border);
+}
+.au-rail-icon {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+.au-rail-icon svg { width: 15px; height: 15px; }
+.au-rail-icon:hover,
+.au-rail-icon.is-active {
+  color: var(--au-blue);
+  background: var(--au-blue-bg);
+}
+.au-content {
+  flex: 1 1 auto;
+  min-width: 0;  /* prevents flex overflow from breaking the fluid width */
+  min-height: 0; /* flex items default to min-height:auto, which lets content grow past the
+                    shell instead of clipping+scrolling — this is what actually makes
+                    overflow-y:auto below take effect at all */
+  overflow-y: auto;
+  /* No top padding here (Björn, 29.08.2026 — real root cause of the anchor scroll-through bug,
+     found via a Playwright repro, not guessed): overflow:auto includes a scroll container's own
+     padding inside its scrollport, so a padding-top here would leave an 8px strip ABOVE the
+     sticky anchor's stuck position (which sticks flush with the padding edge, i.e. *after* that
+     padding) where scrolled-past content could still become visible — exactly what Björn saw
+     (a "Last 5 Hour Session" row peeking out above the anchor). Fix: the top spacing moves onto
+     the anchor itself (padding-top below) so the anchor's own opaque box actually starts at
+     .au-content's true clip boundary, with nothing above it left uncovered. */
+  padding: 0 10px 8px;
+}
+/* Anchor block — meta/7-day chart/model bar stay pinned to the top of .au-content's own scroll
+   context on every rail page (Björn, 29.08.2026); only the page content below scrolls under
+   it. Same sticky pattern as .au-header above, just scoped one level deeper since .au-content
+   (not .au-container) is the actual scrolling ancestor once the rail/shell exists. */
+.au-content-anchor {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--background-primary);
+  padding-top: 8px; /* absorbs the spacing .au-content used to own — see comment above */
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
 .au-mini-bar-wrap {
   height: 6px;
   background: var(--background-modifier-border);
@@ -429,6 +681,51 @@
   background: var(--background-secondary);
   border-radius: 4px;
   word-break: break-all;
+}
+
+/* Inline Settings page (Phase E) — Obsidian's .setting-item assumes tab-width space by
+   default (name/description next to the control); stack them instead so name+control don't
+   get squeezed side by side in this narrow rail panel. Same Setting objects as the real
+   Obsidian settings tab (buildSettingsUI()), only the layout around them differs here. */
+.au-inline-settings .setting-item {
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 10px 0;
+}
+.au-inline-settings .setting-item-control {
+  width: 100%;
+  margin-top: 4px;
+  justify-content: flex-start;
+}
+/* The wrapper alone stretching to 100% isn't enough — Obsidian's text inputs/dropdowns carry
+   their own fixed/intrinsic width regardless of their container, which is why "Token Usage
+   Dashboard.html" truncated to "Token Usage Dashboard.h" in the narrow panel (Björn,
+   29.08.2026). Widen the actual controls too, not just the row around them. */
+.au-inline-settings .setting-item-control input[type="text"],
+.au-inline-settings .setting-item-control select {
+  width: 100%;
+}
+.au-inline-settings h2 {
+  font-size: 13px;
+  margin: 2px 0 8px;
+}
+
+/* "What's new" popup — first Modal-based UI in this plugin. Obsidian's own .modal base CSS
+   already handles the overlay/frame/centering; only the content inside needs light styling. */
+.au-whats-new-modal h2 {
+  margin-top: 0;
+}
+.au-whats-new-list {
+  margin: 0.5em 0 1em;
+  padding-left: 1.2em;
+}
+.au-whats-new-list li {
+  margin-bottom: 0.4em;
+  line-height: 1.4;
+}
+.au-whats-new-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* ── Help panel ─────────────────────────────────────────────────── */
