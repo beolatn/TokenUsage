@@ -71,6 +71,14 @@ A live file watcher detects new activity the moment Claude Code writes a respons
 - Switching between Obsidian vaults has no effect on the numbers — the plugin doesn't read anything from the vault itself, so the same totals show up no matter which vault is open.
 - If you use Claude Code in more than one place on this machine (other vaults, plain code repositories, etc.), all of that usage is combined into one number by default. The **Vault / Project Breakdown** below splits that combined number back down per working directory, with no extra setup.
 
+### What is measured (and what isn't)
+
+Because the plugin reads what Claude Code writes to disk, it covers **every way you run Claude Code**: in a terminal, inside Obsidian, in an editor such as VS Code, and the **agent mode built into the Claude desktop app** (which runs Claude Code embedded and writes the same session format to its own location — Token Usage reads that too, since v1.8).
+
+It cannot show **ordinary chat** — the conversations you have in the Claude desktop app or on claude.ai. Those never write token counts to your machine. The only usage signal exposed there is a rounded percentage of your current limit, not the per-request token counts this plugin is built on.
+
+This matters for one number in particular: the **rate limit estimates** in the dashboard are derived from how many tokens were counted when a limit was actually hit. Chat usage draws on the same plan limit but leaves no local trace, so if you use chat alongside Claude Code, the real limit sits somewhat higher than the estimate shown.
+
 ---
 
 ## Vault / Project Breakdown
@@ -332,7 +340,7 @@ Contributions, bug reports, feature requests, and suggestions are welcome.
 
 If you encounter a problem or have an idea for improvement, please open an issue in the GitHub repository.
 
-Full documentation and glossary: [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/)
+Full documentation and glossary: [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) · Manual (in progress): [langeatn.de/media/token-usage/manual/](https://www.langeatn.de/media/token-usage/manual/)
 
 ---
 
@@ -351,6 +359,14 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 ---
 
 ## Changelog
+
+### v1.8.0 — September 2026
+
+- **Activity calendar** (NextGen sidebar) — a month grid pinned to the bottom of every rail page, one colored dot per day sized against your own recent daily average (green below, amber around, red for a 2×+ spike). Navigate back through your history; toggle it off under Settings → Activity calendar
+- **Claude desktop app usage now counts** — the agent mode built into the desktop app runs Claude Code and writes the same JSONL session logs to its own location; the plugin now reads those too, so that consumption no longer goes missing from your totals and rate-limit estimates. A one-time archive rebuild on first launch backfills the affected days
+- **Dashboard: expandable sub-project detail** — the Projects view stays one row per vault by default; tick "Show sub-project detail" to expand any vault and see its per-subfolder token split inline, not only in the Markdown export
+- **Clearer scope** — a new "What is measured" glossary entry and dashboard note make explicit that the plugin covers Claude Code everywhere, but not ordinary Claude chat (which writes no local token counts)
+- **Manual** — a chapter-by-chapter guide is taking shape at [langeatn.de/media/token-usage/manual/](https://www.langeatn.de/media/token-usage/manual/); the outline is live, content fills in over the coming releases
 
 ### v1.7.1 — September 2026
 

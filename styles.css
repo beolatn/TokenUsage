@@ -581,6 +581,83 @@
   margin-bottom: 4px;
   border-bottom: 1px solid var(--background-modifier-border);
 }
+
+/* NextGen activity calendar (v1.8) — the bottom mirror of .au-content-anchor. Negative
+   horizontal margins full-bleed the border/background to the panel edges; the negative
+   bottom margin cancels .au-content's own 8px bottom padding so `bottom: 0` sticks flush
+   with the scroll container's edge (same reasoning as the anchor owning padding-top). */
+.au-calendar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  flex-shrink: 0;
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  margin: 6px -10px -8px;
+  padding: 6px 10px 8px;
+}
+.au-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.au-cal-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+.au-cal-nav {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.au-cal-nav:hover:not(:disabled) { color: var(--au-blue); background: var(--au-blue-bg); }
+.au-cal-nav:disabled { opacity: 0.3; cursor: default; }
+.au-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.au-cal-dow {
+  font-size: 9px;
+  text-align: center;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  padding-bottom: 2px;
+}
+.au-cal-day {
+  position: relative;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-radius: 4px;
+}
+.au-cal-day.is-outside { color: var(--text-faint); opacity: 0.45; }
+.au-cal-day.is-today   { outline: 1px solid var(--au-blue); color: var(--text-normal); }
+.au-cal-day.is-future  { color: var(--text-faint); opacity: 0.3; }
+.au-cal-dom { line-height: 1; }
+.au-cal-dot {
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.au-cal-dot-good { background: var(--au-green); }
+.au-cal-dot-warn { background: var(--au-amber); }
+.au-cal-dot-bad  { background: var(--au-red); }
 .au-mini-bar-wrap {
   height: 6px;
   background: var(--background-modifier-border);

@@ -17,6 +17,17 @@ const HELP_URL   = 'https://www.langeatn.de/media/token-usage/';
 const CLAUDE_SETTINGS_PATH   = path.join(os.homedir(), '.claude', 'settings.json');
 const DEFAULT_RETENTION_DAYS = 30; // Anthropic's own default when cleanupPeriodDays is unset
 
+// Claude Desktop "Agent Mode" (v1.8) — the desktop app runs Claude Code embedded and writes the
+// exact same JSONL session format, but into its own isolated HOME instead of ~/.claude. Without
+// this second source that usage is invisible to the plugin even though the data is right there.
+// Layout below the anchor: <workspace>/<session>/local_<uuid>/.claude/projects/<cwd>/<id>.jsonl
+const AGENT_MODE_DIRNAME = 'local-agent-mode-sessions';
+// One-shot archive rebuild after adding the agent-mode source. Past archive files are treated as
+// final (see _archiveDays), so days already archived would keep their old, too-low totals and the
+// numbers would visibly drop again once such a day ages out of the live window. Bumping this tag
+// re-writes every day still covered by live data, exactly once. See settings.archiveRebuildDone.
+const ARCHIVE_REBUILD_TAG = '1.8.0-agentmode';
+
 // Reads Claude Code's own retention window from ~/.claude/settings.json so the plugin's
 // read depth matches what the user actually configured (v1.7). Falls back to Anthropic's
 // documented default (30) if the file is missing, unreadable, or the value is invalid —
@@ -78,6 +89,12 @@ const DEFAULT_SETTINGS = {
   // Tracks the last plugin version the user has seen the "What's new" popup for.
   // null = never recorded yet. See AnthropicUsagePlugin._maybeShowWhatsNew().
   lastSeenVersion: null,
+  // Which one-shot archive rebuild has already run. null = none yet.
+  // Compared against ARCHIVE_REBUILD_TAG in _archiveDays().
+  archiveRebuildDone: null,
+  // NextGen activity calendar (v1.8) — month grid pinned to the bottom of the NextGen
+  // sidebar, one colored dot per day. Default on; Classic sidebar is never affected.
+  calendarVisible: true,
 };
 
 // Logo SVG — compact bar chart using plugin accent colors
@@ -123,6 +140,10 @@ const HELP_SECTIONS = [
     body:  'The sidebar has two layouts, switchable anytime in Settings → Sidebar appearance. Classic is the original single-page view and stays the default. NextGen switches to an icon rail with dedicated Today, Overview, and Settings pages, replaces the daily bar chart with a 7-day activity heatmap, and shows the 7-day and N-day summaries as colored KPI tiles with trend sparklines.\n\nIn NextGen, each of Today\'s four token rows also gets a compact verdict marker — a green dot when close to your own recent average, an amber arrow when running noticeably higher. The comparison window follows your Claude data retention setting, not a fixed number of days.\n\nSwitching between Classic and NextGen is fully reversible and does not affect any underlying data.',
   },
   {
+    title: 'Activity calendar',
+    body:  'In the NextGen sidebar a month calendar sits at the bottom of every page. Each past day carries a colored dot sized against your own recent daily average: green below average, amber around it, red for a spike (2x or more). Days with no activity have no dot. Use the arrows to move back through your history as far as the archive reaches; the calendar never goes into the future and is display only. Turn it off under Settings → Activity calendar if you prefer a shorter sidebar.',
+  },
+  {
     title: 'Models',
     body:  'Haiku — fastest, cheapest, great for quick tasks.\nSonnet — balanced capability and cost.\nOpus — most capable in the Opus line.\nFable — Anthropic\'s most capable released model, highest cost.\n\nThe colored bar under the 7-day chart shows which model you actually used most in the last 7 days.',
   },
@@ -133,6 +154,14 @@ const HELP_SECTIONS = [
   {
     title: 'Vault Token Usage Controlling',
     body:  'If you use Claude Code across more than one Obsidian vault — separate vaults per client, or a personal vault alongside a work vault — the HTML dashboard\'s Projects view breaks total token usage down by vault, and by sub-project within a vault whenever your working directory changed during a session.\n\nEach vault gets its own row: total tokens, share of overall usage, active days, and first/last active day. A day-by-vault detail table shows the same breakdown per calendar day, and a standalone Vault_Token_Usage_Projects.md export (Command Palette or Settings) is built for spreadsheets — useful for splitting costs across clients or projects when billing.',
+  },
+  {
+    title: 'Sub-project detail',
+    body:  'The dashboard Projects view lists one row per vault by default. Tick "Show sub-project detail" above the table to give every vault with sub-folder activity an expander: open it to see that vault\'s per-subfolder token split inline (label, tokens, share of the vault). Sorting still applies to the vault rows; the sub-rows stay grouped under their vault. The same breakdown is also in the Vault_Token_Usage_Projects.md export.',
+  },
+  {
+    title: 'What is measured',
+    body:  'This plugin reads what Claude Code writes to disk, so it covers every way you run Claude Code: in a terminal, inside Obsidian, in an editor like VS Code, and the agent mode built into the Claude desktop app. All of it lands in the same numbers.\n\nWhat it cannot show is ordinary chat — the conversations you have in the Claude desktop app or on claude.ai. Those never write token counts to your machine; the only usage signal available there is a rounded percentage of your current limit, not the actual token counts this plugin is built on.\n\nSo if a day feels busier than the figures suggest, that is usually the reason: your chat usage counts against the same plan limit, but leaves no local trace to measure. Worth keeping in mind for the rate limit estimates in particular, which can only be derived from the portion that is visible here.',
   },
   {
     title: 'Archive & long-term data',
@@ -231,6 +260,10 @@ const STRINGS = {
     cleanupSaved:  (n) => `Retention updated — Claude Code will now keep session files for ${n} days.`,
     cleanupFailed: 'Failed to update retention: ',
     archiveBackfilled: (n) => `Token Usage archived ${n} days of history.`,
+    calPrev:          'Previous month',
+    calNext:          'Next month',
+    settingCalendar:     'Activity calendar (NextGen)',
+    settingCalendarDesc: 'Shows a month calendar at the bottom of the NextGen sidebar with one colored dot per day, sized against your recent daily average (green below, amber around, red well above). The Classic sidebar is unaffected.',
     helpSections:     HELP_SECTIONS,
   },
   de: {
@@ -310,6 +343,10 @@ const STRINGS = {
     cleanupSaved:  (n) => `Aufbewahrung aktualisiert — Claude Code behält Session-Dateien jetzt ${n} Tage.`,
     cleanupFailed: 'Aktualisierung fehlgeschlagen: ',
     archiveBackfilled: (n) => `Token Usage hat ${n} Tage Historie archiviert.`,
+    calPrev:          'Vorheriger Monat',
+    calNext:          'Nächster Monat',
+    settingCalendar:     'Aktivitätskalender (NextGen)',
+    settingCalendarDesc: 'Zeigt unten in der NextGen-Sidebar einen Monatskalender mit einem farbigen Punkt pro Tag, gewichtet gegen deinen jüngsten Tagesdurchschnitt (grün darunter, gelb um den Schnitt, rot deutlich darüber). Die Classic-Sidebar bleibt unberührt.',
     helpSections: [
       {
         title: 'Token',
@@ -344,6 +381,10 @@ const STRINGS = {
         body:  'Die Seitenleiste hat zwei Darstellungen, jederzeit umschaltbar unter Settings → Sidebar appearance. Classic ist die ursprüngliche Einzelseiten-Ansicht und bleibt der Standard. NextGen wechselt zu einer Icon-Leiste mit eigenen Today-, Overview- und Settings-Seiten, ersetzt das tägliche Balkendiagramm durch eine 7-Tage-Aktivitäts-Heatmap und zeigt die 7-Tage- und N-Tage-Zusammenfassungen als farbige KPI-Kacheln mit Trend-Sparklines.\n\nIn NextGen bekommt außerdem jede der vier Token-Zeilen im Heute-Bereich eine kompakte Verdict-Markierung — ein grüner Punkt, wenn der Wert nahe an deinem eigenen aktuellen Durchschnitt liegt, ein gelber Pfeil, wenn er deutlich darüber liegt. Das Vergleichsfenster richtet sich nach deiner eingestellten Claude-Datenaufbewahrung, nicht nach einer festen Anzahl Tage.\n\nDer Wechsel zwischen Classic und NextGen ist jederzeit rückgängig zu machen und beeinflusst keine zugrunde liegenden Daten.',
       },
       {
+        title: 'Aktivitätskalender',
+        body:  'In der NextGen-Seitenleiste sitzt unten auf jeder Seite ein Monatskalender. Jeder vergangene Tag trägt einen farbigen Punkt, gewichtet gegen deinen eigenen jüngsten Tagesdurchschnitt: grün darunter, gelb um den Schnitt herum, rot bei einem Ausschlag (2x oder mehr). Tage ohne Aktivität haben keinen Punkt. Mit den Pfeilen gehst du so weit zurück, wie das Archiv reicht; in die Zukunft geht der Kalender nie, und er ist reine Anzeige. Unter Settings → Aktivitätskalender lässt er sich abschalten, wenn du eine kürzere Seitenleiste möchtest.',
+      },
+      {
         title: 'Modelle',
         body:  'Haiku — schnellstes, günstigstes Modell, ideal für schnelle Aufgaben.\nSonnet — ausgewogenes Verhältnis aus Leistung und Kosten.\nOpus — leistungsstarkes Modell in der Opus-Linie.\nFable — Anthropics leistungsfähigstes veröffentlichtes Modell, höchste Kosten.\n\nDer farbige Balken unter dem 7-Tage-Diagramm zeigt, welches Modell du in den letzten 7 Tagen am häufigsten genutzt hast.',
       },
@@ -354,6 +395,14 @@ const STRINGS = {
       {
         title: 'Vault Token Usage Controlling',
         body:  'Wenn du Claude Code über mehr als ein Obsidian-Vault hinweg nutzt — getrennte Vaults pro Kunde, oder ein privates Vault neben einem Arbeits-Vault —, schlüsselt die Projects-Ansicht im HTML-Dashboard den gesamten Token-Verbrauch nach Vault auf, und innerhalb eines Vaults zusätzlich nach Unterprojekt, wann immer sich dein Arbeitsverzeichnis innerhalb einer Session geändert hat.\n\nJedes Vault bekommt eine eigene Zeile: Gesamt-Tokens, Anteil am Gesamtverbrauch, aktive Tage sowie erster und letzter aktiver Tag. Eine Tag-für-Vault-Detailtabelle zeigt dieselbe Aufschlüsselung pro Kalendertag, und ein eigenständiger Vault_Token_Usage_Projects.md-Export (Command Palette oder Settings) ist für Tabellenkalkulationen gedacht — nützlich, um Kosten bei der Abrechnung auf Kunden oder Projekte aufzuteilen.',
+      },
+      {
+        title: 'Unterprojekt-Detail',
+        body:  'Die Projects-Ansicht im Dashboard zeigt standardmäßig eine Zeile pro Vault. Setze oben über der Tabelle den Haken bei "Show sub-project detail", dann bekommt jedes Vault mit Unterordner-Aktivität ein Aufklapp-Symbol: geöffnet zeigt es die Token-Aufteilung nach Unterordner direkt in der Tabelle (Bezeichnung, Tokens, Anteil am Vault). Die Sortierung wirkt weiterhin nur auf die Vault-Zeilen; die Unterzeilen bleiben unter ihrem Vault gruppiert. Dieselbe Aufschlüsselung steht auch im Vault_Token_Usage_Projects.md-Export.',
+      },
+      {
+        title: 'Was gemessen wird',
+        body:  'Dieses Plugin liest, was Claude Code auf die Festplatte schreibt. Damit ist jede Art erfasst, wie du Claude Code nutzt: im Terminal, in Obsidian, in einem Editor wie VS Code sowie im Agent-Modus der Claude-Desktop-App. All das fließt in dieselben Zahlen ein.\n\nNicht zeigen kann es den normalen Chat — also die Gespräche in der Claude-Desktop-App oder auf claude.ai. Dort werden keine Token-Werte auf deinem Rechner gespeichert; verfügbar ist dort nur ein gerundeter Prozentwert deiner aktuellen Auslastung, nicht die tatsächlichen Token-Zahlen, auf denen dieses Plugin aufbaut.\n\nWenn ein Tag also voller wirkt als die Zahlen vermuten lassen, ist das meist der Grund: Dein Chat-Verbrauch zählt auf dasselbe Limit, hinterlässt lokal aber keine messbare Spur. Besonders bei den Rate-Limit-Schätzungen im Hinterkopf behalten, denn die lassen sich nur aus dem hier sichtbaren Teil ableiten.',
       },
       {
         title: 'Archiv & Langzeit-Daten',
@@ -442,6 +491,10 @@ const STRINGS = {
     cleanupSaved:  (n) => `Conservation mise à jour — Claude Code conservera les fichiers de session pendant ${n} jours.`,
     cleanupFailed: 'Échec de la mise à jour : ',
     archiveBackfilled: (n) => `Token Usage a archivé ${n} jours d'historique.`,
+    calPrev:          'Mois précédent',
+    calNext:          'Mois suivant',
+    settingCalendar:     'Calendrier d\'activité (NextGen)',
+    settingCalendarDesc: 'Affiche en bas de la barre latérale NextGen un calendrier mensuel avec une pastille colorée par jour, pondérée par rapport à votre moyenne quotidienne récente (vert en dessous, ambre autour, rouge nettement au-dessus). La barre latérale Classic n\'est pas affectée.',
     helpSections: [
       {
         title: 'Jetons',
@@ -476,6 +529,10 @@ const STRINGS = {
         body:  'La barre latérale propose deux apparences, modifiables à tout moment sous Réglages → Apparence de la barre latérale. Classic est la vue d\'origine sur une seule page et reste la valeur par défaut. NextGen bascule vers une barre d\'icônes avec des pages dédiées Today, Overview et Settings, remplace le graphique quotidien à barres par une carte thermique d\'activité sur 7 jours, et affiche les résumés sur 7 jours et N jours sous forme de tuiles KPI colorées avec sparklines.\n\nDans NextGen, chacune des quatre lignes de tokens d\'Aujourd\'hui reçoit également un repère compact — un point vert lorsque la valeur est proche de votre moyenne récente, une flèche ambre lorsqu\'elle est nettement plus élevée. La fenêtre de comparaison suit votre réglage de conservation des données Claude, pas un nombre de jours fixe.\n\nBasculer entre Classic et NextGen est entièrement réversible et n\'affecte aucune donnée sous-jacente.',
       },
       {
+        title: 'Calendrier d\'activité',
+        body:  'Dans la barre latérale NextGen, un calendrier mensuel se trouve en bas de chaque page. Chaque jour passé porte une pastille colorée, pondérée par rapport à votre propre moyenne quotidienne récente : vert en dessous, ambre autour, rouge pour un pic (2x ou plus). Les jours sans activité n\'ont pas de pastille. Les flèches permettent de remonter aussi loin que l\'archive le permet ; le calendrier ne va jamais dans le futur et sert uniquement d\'affichage. Désactivez-le sous Réglages → Calendrier d\'activité si vous préférez une barre latérale plus courte.',
+      },
+      {
         title: 'Modèles',
         body:  'Haiku — le plus rapide et le moins cher, idéal pour les tâches rapides.\nSonnet — équilibre entre capacités et coût.\nOpus — le plus performant de la gamme Opus.\nFable — le modèle publié le plus performant d\'Anthropic, au coût le plus élevé.\n\nLa barre colorée sous le graphique sur 7 jours indique le modèle que vous avez réellement le plus utilisé au cours des 7 derniers jours.',
       },
@@ -486,6 +543,14 @@ const STRINGS = {
       {
         title: 'Vault Token Usage Controlling',
         body:  'Si vous utilisez Claude Code sur plusieurs vaults Obsidian — un vault distinct par client, ou un vault personnel à côté d\'un vault professionnel —, la vue Projects du tableau de bord HTML répartit le total des tokens consommés par vault, et par sous-projet au sein d\'un vault chaque fois que votre répertoire de travail a changé pendant une session.\n\nChaque vault obtient sa propre ligne : total de tokens, part de la consommation globale, jours actifs, ainsi que premier et dernier jour d\'activité. Un tableau de détail jour par vault affiche la même répartition par jour calendaire, et un export autonome Vault_Token_Usage_Projects.md (palette de commandes ou réglages) est conçu pour les tableurs — utile pour répartir les coûts entre clients ou projets lors de la facturation.',
+      },
+      {
+        title: 'Détail par sous-projet',
+        body:  'La vue Projects du tableau de bord affiche par défaut une ligne par vault. Cochez « Show sub-project detail » au-dessus du tableau : chaque vault ayant de l\'activité dans des sous-dossiers reçoit alors une flèche de dépliage qui montre, directement dans le tableau, la répartition des tokens par sous-dossier (libellé, tokens, part du vault). Le tri continue de s\'appliquer aux lignes de vault ; les sous-lignes restent regroupées sous leur vault. La même répartition figure aussi dans l\'export Vault_Token_Usage_Projects.md.',
+      },
+      {
+        title: 'Ce qui est mesuré',
+        body:  'Ce plugin lit ce que Claude Code écrit sur le disque. Toutes les façons d\'utiliser Claude Code sont donc couvertes : dans un terminal, dans Obsidian, dans un éditeur comme VS Code, ainsi que le mode agent intégré à l\'application de bureau Claude. Tout cela alimente les mêmes chiffres.\n\nCe qu\'il ne peut pas montrer, c\'est le chat classique — les conversations menées dans l\'application de bureau ou sur claude.ai. Aucun décompte de tokens n\'y est enregistré sur votre machine ; le seul indicateur disponible est un pourcentage arrondi de votre limite actuelle, et non les valeurs réelles sur lesquelles repose ce plugin.\n\nSi une journée vous semble donc plus chargée que ne le suggèrent les chiffres, c\'est généralement l\'explication : votre usage du chat compte dans la même limite, mais ne laisse aucune trace mesurable en local. À garder à l\'esprit surtout pour les estimations de limites, qui ne peuvent être déduites que de la partie visible ici.',
       },
       {
         title: 'Archive et données à long terme',
@@ -574,6 +639,10 @@ const STRINGS = {
     cleanupSaved:  (n) => `Conservazione aggiornata — Claude Code conserverà i file di sessione per ${n} giorni.`,
     cleanupFailed: 'Aggiornamento non riuscito: ',
     archiveBackfilled: (n) => `Token Usage ha archiviato ${n} giorni di cronologia.`,
+    calPrev:          'Mese precedente',
+    calNext:          'Mese successivo',
+    settingCalendar:     'Calendario attività (NextGen)',
+    settingCalendarDesc: 'Mostra in fondo alla barra laterale NextGen un calendario mensile con un punto colorato per giorno, ponderato rispetto alla tua media giornaliera recente (verde sotto, ambra intorno, rosso ben sopra). La barra laterale Classic non è interessata.',
     helpSections: [
       {
         title: 'Token',
@@ -608,6 +677,10 @@ const STRINGS = {
         body:  'La barra laterale ha due aspetti, cambiabili in qualsiasi momento in Impostazioni → Aspetto della barra laterale. Classic è la vista originale a pagina singola e resta l\'impostazione predefinita. NextGen passa a una barra di icone con pagine dedicate Today, Overview e Settings, sostituisce il grafico a barre giornaliero con una mappa di calore dell\'attività su 7 giorni e mostra i riepiloghi su 7 giorni e N giorni come riquadri KPI colorati con sparkline.\n\nIn NextGen, ciascuna delle quattro righe di token in Oggi riceve anche un indicatore compatto — un punto verde quando il valore è vicino alla tua media recente, una freccia ambra quando è nettamente più alto. La finestra di confronto segue la tua impostazione di conservazione dei dati Claude, non un numero fisso di giorni.\n\nIl passaggio tra Classic e NextGen è completamente reversibile e non influisce sui dati sottostanti.',
       },
       {
+        title: 'Calendario attività',
+        body:  'Nella barra laterale NextGen, in fondo a ogni pagina si trova un calendario mensile. Ogni giorno passato ha un punto colorato, ponderato rispetto alla tua media giornaliera recente: verde sotto la media, ambra intorno ad essa, rosso per un picco (2x o più). I giorni senza attività non hanno punto. Con le frecce puoi tornare indietro fin dove arriva l\'archivio; il calendario non va mai nel futuro ed è solo di visualizzazione. Disattivalo in Impostazioni → Calendario attività se preferisci una barra laterale più corta.',
+      },
+      {
         title: 'Modelli',
         body:  'Haiku — il più veloce e conveniente, ideale per attività rapide.\nSonnet — equilibrio tra capacità e costo.\nOpus — il più capace della linea Opus.\nFable — il modello pubblicato più capace di Anthropic, con il costo più elevato.\n\nLa barra colorata sotto il grafico dei 7 giorni mostra quale modello hai effettivamente utilizzato di più negli ultimi 7 giorni.',
       },
@@ -618,6 +691,14 @@ const STRINGS = {
       {
         title: 'Vault Token Usage Controlling',
         body:  'Se utilizzi Claude Code su più vault Obsidian — vault separati per cliente, oppure un vault personale accanto a uno di lavoro — la vista Projects della dashboard HTML suddivide il consumo totale di token per vault, e per sottoprogetto all\'interno di un vault ogni volta che la directory di lavoro è cambiata durante una sessione.\n\nOgni vault ottiene una propria riga: token totali, quota sul consumo complessivo, giorni attivi e primo/ultimo giorno di attività. Una tabella di dettaglio giorno per vault mostra la stessa suddivisione per giorno di calendario, e un export autonomo Vault_Token_Usage_Projects.md (Command Palette o Impostazioni) è pensato per i fogli di calcolo — utile per ripartire i costi tra clienti o progetti in fase di fatturazione.',
+      },
+      {
+        title: 'Dettaglio sottoprogetti',
+        body:  'La vista Projects della dashboard mostra per impostazione predefinita una riga per vault. Spunta "Show sub-project detail" sopra la tabella: ogni vault con attività in sottocartelle riceve una freccia di espansione che mostra, direttamente nella tabella, la suddivisione dei token per sottocartella (etichetta, token, quota sul vault). L\'ordinamento continua ad applicarsi alle righe di vault; le sottorighe restano raggruppate sotto il loro vault. La stessa suddivisione è disponibile anche nell\'export Vault_Token_Usage_Projects.md.',
+      },
+      {
+        title: 'Cosa viene misurato',
+        body:  'Questo plugin legge ciò che Claude Code scrive su disco. Sono quindi coperti tutti i modi in cui usi Claude Code: nel terminale, in Obsidian, in un editor come VS Code e nella modalità agente integrata nell\'app desktop di Claude. Tutto confluisce negli stessi numeri.\n\nCiò che non può mostrare è la chat normale — le conversazioni nell\'app desktop o su claude.ai. Lì nessun conteggio di token viene salvato sul tuo computer; l\'unico segnale disponibile è una percentuale arrotondata del limite attuale, non i valori reali su cui si basa questo plugin.\n\nQuindi, se una giornata sembra più intensa di quanto suggeriscano i numeri, di solito il motivo è questo: il consumo in chat incide sullo stesso limite, ma non lascia alcuna traccia misurabile in locale. Da tenere presente soprattutto per le stime dei limiti, che possono essere ricavate solo dalla parte qui visibile.',
       },
       {
         title: 'Archivio e dati a lungo termine',
@@ -717,6 +798,12 @@ function dayStart(date) {
 }
 function daysAgoTs(n) {
   const d = new Date(); d.setDate(d.getDate() - n); d.setHours(0, 0, 0, 0); return d.getTime();
+}
+// Maps the plugin's 2-letter UI language to a BCP-47 locale for Intl date formatting
+// (month names, weekday headers in the NextGen calendar). Everything else in the plugin
+// still formats with a fixed 'en-GB' on purpose — only the calendar is user-language-aware.
+function localeFor(lang) {
+  return { en: 'en-GB', de: 'de-DE', fr: 'fr-FR', it: 'it-IT' }[lang] || 'en-GB';
 }
 
 // Billing week starts Sunday 18:00 CEST = 16:00 UTC. Module-level (Phase 0 of the UI relaunch —
@@ -890,6 +977,12 @@ function modelFamily(name) {
 function vaultLabel(cwd) {
   if (!cwd) return 'Unknown';
   const norm = String(cwd).replace(/[\\/]+$/, '');
+  // Claude Desktop agent mode (v1.8): these sessions run in a generated sandbox whose cwd ends in
+  // a technical "outputs" folder, so the generic last-segment rule would file every one of them
+  // under a meaningless shared "outputs" row. The anchor folder name is part of the path itself,
+  // which makes this checkable here — and because every tally keys through vaultLabel(), the
+  // special case covers live data, archived data, dashboard, sidebar and export in one place.
+  if (norm.includes(AGENT_MODE_DIRNAME)) return 'Claude Desktop (Agent Mode)';
   const parts = norm.split(/[\\/]/).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : 'Unknown';
 }
@@ -908,12 +1001,14 @@ function modelDistribution(entries) {
 }
 
 // ── JSONL Parsing ─────────────────────────────────────────────────
-function getAllSessionFiles() {
-  const files = [];
-  if (!fs.existsSync(CLAUDE_DIR)) return files;
+// Collects every *.jsonl below a Claude Code "projects" directory (one subfolder per working
+// directory, session files inside). Extracted from getAllSessionFiles() so the identical layout
+// can be harvested from more than one root — see getAgentModeProjectDirs().
+function collectFromProjectsDir(projectsDir, files) {
+  if (!fs.existsSync(projectsDir)) return;
   try {
-    for (const proj of fs.readdirSync(CLAUDE_DIR)) {
-      const projDir = path.join(CLAUDE_DIR, proj);
+    for (const proj of fs.readdirSync(projectsDir)) {
+      const projDir = path.join(projectsDir, proj);
       try {
         for (const entry of fs.readdirSync(projDir)) {
           if (!entry.endsWith('.jsonl')) continue;
@@ -923,6 +1018,64 @@ function getAllSessionFiles() {
       } catch(e) {}
     }
   } catch(e) {}
+}
+
+// Anchors under which Claude Desktop keeps its agent-mode sessions. Two installation flavours:
+//   MSIX/Store  — %LOCALAPPDATA%\Packages\<Claude_hash>\LocalCache\Roaming\Claude\...
+//                 (the app itself only ever sees the virtualised %APPDATA%\Claude path, so the
+//                  cwd recorded inside the files does NOT match this physical location)
+//   classic     — %APPDATA%\Claude\...
+// The package folder is globbed rather than hardcoded so the publisher hash can change.
+function getAgentModeRoots() {
+  const roots = [];
+  const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
+  roots.push(path.join(appData, 'Claude', AGENT_MODE_DIRNAME));
+
+  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+  const packagesDir  = path.join(localAppData, 'Packages');
+  try {
+    for (const pkg of fs.readdirSync(packagesDir)) {
+      if (!/^Claude_/i.test(pkg)) continue;
+      roots.push(path.join(packagesDir, pkg, 'LocalCache', 'Roaming', 'Claude', AGENT_MODE_DIRNAME));
+    }
+  } catch(e) {}
+  return roots;
+}
+
+// Walks the known fixed depth below each agent-mode root and returns every ".claude/projects"
+// directory found. Deliberately not a recursive scan: the layout is known, and recursing through
+// an app sandbox would be needlessly expensive on every refresh.
+function getAgentModeProjectDirs() {
+  const dirs = [];
+  for (const root of getAgentModeRoots()) {
+    if (!fs.existsSync(root)) continue;
+    try {
+      for (const workspace of fs.readdirSync(root)) {
+        const wsDir = path.join(root, workspace);
+        try {
+          for (const session of fs.readdirSync(wsDir)) {
+            const sessDir = path.join(wsDir, session);
+            try {
+              for (const local of fs.readdirSync(sessDir)) {
+                const projectsDir = path.join(sessDir, local, '.claude', 'projects');
+                if (fs.existsSync(projectsDir)) dirs.push(projectsDir);
+              }
+            } catch(e) {}
+          }
+        } catch(e) {}
+      }
+    } catch(e) {}
+  }
+  return dirs;
+}
+
+function getAllSessionFiles() {
+  const files = [];
+  collectFromProjectsDir(CLAUDE_DIR, files);
+  // Second source (v1.8): Claude Desktop's embedded agent mode. Same format, same parser —
+  // only the location differs. Missing folders are the normal case (feature never used, or
+  // the desktop app not installed at all) and are handled silently by the existsSync guards.
+  for (const dir of getAgentModeProjectDirs()) collectFromProjectsDir(dir, files);
   return files.sort((a, b) => b.mtime - a.mtime);
 }
 
@@ -1095,6 +1248,12 @@ class AnthropicUsageView extends obsidian.ItemView {
     // Today, split back out as its own page — Björn wants room to grow this with more summary
     // info later). Archive dropped from the rail entirely for now (was a placeholder only).
     this._activePage = 'today';
+    // NextGen activity calendar (v1.8) — which month is on screen. Same "persists across
+    // rebuilds" pattern as _activePage; only read when sidebarMode === 'nextgen' AND
+    // settings.calendarVisible !== false. Starts on the current month.
+    const _cnow = new Date();
+    this._calYear  = _cnow.getFullYear();
+    this._calMonth = _cnow.getMonth(); // 0-11
   }
 
   getViewType()    { return VIEW_TYPE; }
@@ -1208,6 +1367,7 @@ class AnthropicUsageView extends obsidian.ItemView {
         session:      aggregate(sessionEntries),
         sessionStart: sessionEntries.length > 0 ? Math.min(...sessionEntries.map(e => e.timestamp)) : null,
         today:        todayAgg,
+        avgDaily,
         spikeRatio,
         spikeRatioWeek,
         spikeRatioByType,
@@ -1409,6 +1569,9 @@ class AnthropicUsageView extends obsidian.ItemView {
     if (isNextGen) {
       this._renderNextGenPages(content, d);
       this._renderFooter(content, d);
+      // Calendar last, so it's the final child of .au-content and its sticky bottom:0 sticks
+      // flush with the scroll container's edge (mirror of the anchor being the first child).
+      if (this.plugin.settings.calendarVisible !== false) this._renderCalendar(content, d);
       return;
     }
 
@@ -1579,6 +1742,76 @@ class AnthropicUsageView extends obsidian.ItemView {
   _renderSettingsPage(el) {
     const wrap = el.createEl('div', { cls: 'au-inline-settings' });
     buildSettingsUI(wrap, this.app, this.plugin, () => this.render());
+  }
+
+  // ── NextGen activity calendar (v1.8) ─────────────────────────────
+  // Pinned to the bottom of .au-content on every rail page (Today/Overview/Settings) — the
+  // mirror of the sticky-top .au-content-anchor. Display only, no click behaviour. One dot per
+  // past active day, banded against the same 29-day avgDaily baseline the Today spike badge
+  // uses (no second baseline concept). Classic never calls this.
+  _renderCalendar(parent, d) {
+    const loc = localeFor(_lang);
+    const cal = parent.createEl('div', { cls: 'au-calendar' });
+
+    const viewFirst = new Date(this._calYear, this._calMonth, 1);
+    const now       = new Date();
+    const minReached = this._calYear < 2020 || (this._calYear === 2020 && this._calMonth <= 0);
+    const maxReached = this._calYear === now.getFullYear() && this._calMonth === now.getMonth();
+
+    const head = cal.createEl('div', { cls: 'au-cal-head' });
+    const prev = head.createEl('button', { cls: 'au-cal-nav', text: '‹' });
+    prev.title = t('calPrev');
+    prev.disabled = minReached;
+    if (!minReached) prev.onclick = () => this._calShift(-1);
+    head.createEl('span', { cls: 'au-cal-title',
+      text: viewFirst.toLocaleDateString(loc, { month: 'long', year: 'numeric' }) });
+    const next = head.createEl('button', { cls: 'au-cal-nav', text: '›' });
+    next.title = t('calNext');
+    next.disabled = maxReached;
+    if (!maxReached) next.onclick = () => this._calShift(1);
+
+    const grid = cal.createEl('div', { cls: 'au-cal-grid' });
+    // Weekday header, Monday-first, localised short names (2024-01-01 is a Monday).
+    const wkRef = new Date(2024, 0, 1);
+    for (let i = 0; i < 7; i++) {
+      const dd = new Date(wkRef); dd.setDate(wkRef.getDate() + i);
+      grid.createEl('span', { cls: 'au-cal-dow', text: dd.toLocaleDateString(loc, { weekday: 'short' }) });
+    }
+
+    const avg = d.avgDaily || 0;
+    for (const c of this._buildMonthDays(this._calYear, this._calMonth)) {
+      const cell = grid.createEl('span', {
+        cls: 'au-cal-day'
+          + (c.outside  ? ' is-outside' : '')
+          + (c.isToday  ? ' is-today'   : '')
+          + (c.isFuture ? ' is-future'  : ''),
+      });
+      cell.createEl('span', { cls: 'au-cal-dom', text: String(c.dom) });
+      const total = (c.input || 0) + (c.output || 0);
+      if (!c.isFuture && total > 0 && avg > 0) {
+        const verdict = bandedVerdict(total / avg, [
+          { upTo: 1,        key: 'good' }, // below the recent daily average
+          { upTo: 2,        key: 'warn' }, // roughly average up to 2×
+          { upTo: Infinity, key: 'bad'  }, // 2× or more — a spike
+        ]);
+        const dot = cell.createEl('span', { cls: `au-cal-dot au-cal-dot-${verdict}` });
+        dot.title = new Date(c.ts).toLocaleDateString(loc) + ' · ' + fmtTokens(total);
+      }
+    }
+  }
+
+  // Month step with clamping — never before Jan 2020, never into a future month.
+  _calShift(delta) {
+    let m = this._calMonth + delta, y = this._calYear;
+    while (m < 0)  { m += 12; y -= 1; }
+    while (m > 11) { m -= 12; y += 1; }
+    const now = new Date();
+    if (y < 2020 || (y === 2020 && m < 0)) { y = 2020; m = 0; }
+    if (y > now.getFullYear() || (y === now.getFullYear() && m > now.getMonth())) {
+      y = now.getFullYear(); m = now.getMonth();
+    }
+    this._calYear = y; this._calMonth = m;
+    this.render();
   }
 
   // ── Help panel ────────────────────────────────────────────────
@@ -1931,13 +2164,21 @@ class AnthropicUsageView extends obsidian.ItemView {
       // about, once, rather than a Notice popping up on every single day forever.
       let newlyArchived = 0;
 
+      // One-shot rebuild (v1.8): a past day's archive file is normally final, but when a NEW data
+      // source is added (agent mode) the already-written totals are too low. Left alone they would
+      // silently take over again the moment such a day ages out of the live window, looking like
+      // the numbers dropped by themselves. Rebuilding is inherently limited to what byDay holds —
+      // days still backed by complete live entries — so older files are never touched with
+      // half-known data. Runs exactly once per tag, then reverts to the normal skip behaviour.
+      const forceRewrite = this.plugin.settings.archiveRebuildDone !== ARCHIVE_REBUILD_TAG;
+
       for (const [dTs, dayEntries] of byDay) {
         const isToday  = dTs === todayTs;
         const dateStr  = new Date(dTs).toISOString().slice(0, 10);
         const filePath = `${folder}/${dateStr}.md`;
         const existing = this.plugin.app.vault.getAbstractFileByPath(filePath);
 
-        if (existing && !isToday) continue; // past day, already archived — final, skip
+        if (existing && !isToday && !forceRewrite) continue; // past day, already archived — final, skip
 
         const agg      = aggregate(dayEntries);
         const sessions = new Set(dayEntries.map(e => e.sessionId || 'unknown')).size;
@@ -1970,6 +2211,14 @@ class AnthropicUsageView extends obsidian.ItemView {
       }
 
       if (newlyArchived > 1) new obsidian.Notice(t('archiveBackfilled', newlyArchived));
+
+      // Mark the rebuild as done only after the loop actually completed. On an exception we fall
+      // into catch below without setting the flag, so the next refresh simply tries again rather
+      // than leaving the archive half-migrated.
+      if (forceRewrite) {
+        this.plugin.settings.archiveRebuildDone = ARCHIVE_REBUILD_TAG;
+        await this.plugin.saveSettings();
+      }
     } catch (e) {
       console.error('Token Usage archive error:', e);
     }
@@ -2088,11 +2337,18 @@ class AnthropicUsageView extends obsidian.ItemView {
   }
 
   _buildDayRange(totalDays) {
-    // Unified day series spanning the full selected report period (v1.7 reporting switch)
-    // — live JSONL for days still within retentionDays, pre-aggregated archive files for
-    // everything older. A day with neither is a real gap (Claude Code already deleted it
-    // before the plugin ever archived it) and shows as zero rather than being skipped, so
-    // the chart's x-axis stays continuous.
+    // Thin wrapper — the contiguous "last N days ending today" range every caller used to
+    // get directly. Actual live+archive merge logic now lives in _buildDaysBetween() so the
+    // NextGen calendar can request arbitrary month windows without duplicating it.
+    return this._buildDaysBetween(daysAgoTs(totalDays - 1), daysAgoTs(0));
+  }
+
+  _buildDaysBetween(fromTs, toTs) {
+    // Unified day series spanning [dayStart(fromTs) .. dayStart(toTs)] inclusive, ascending
+    // (v1.7 reporting switch) — live JSONL for days still within retentionDays, pre-aggregated
+    // archive files for everything older. A day with neither is a real gap (Claude Code already
+    // deleted it before the plugin ever archived it) and shows as zero rather than being
+    // skipped, so the chart's x-axis stays continuous.
     const d = this.data;
     const entries       = d.entries30 || [];
     const retentionDays = d.retentionDays || 30;
@@ -2112,8 +2368,13 @@ class AnthropicUsageView extends obsidian.ItemView {
     }
 
     const out = [];
-    for (let i = totalDays - 1; i >= 0; i--) {
-      const from = daysAgoTs(i);
+    // Cursor at local midnight, advanced with setDate(+1) so it stays on local midnight
+    // across DST boundaries (same guarantee daysAgoTs() gave the old index loop).
+    const cursor = new Date(dayStart(fromTs));
+    const endTs  = dayStart(toTs);
+    while (cursor.getTime() <= endTs) {
+      const from = cursor.getTime();
+      cursor.setDate(cursor.getDate() + 1);
       if (from < liveFloorTs) {
         out.push(archiveByTs.get(from) || {
           ts: from,
@@ -2158,6 +2419,28 @@ class AnthropicUsageView extends obsidian.ItemView {
       });
     }
     return out;
+  }
+
+  // NextGen calendar (v1.8) — always a fixed 6×7 = 42-cell grid, Monday-first. Cells outside
+  // the target month are filled from the adjacent months and flagged `outside`, so the grid
+  // height never changes between months regardless of length or start weekday. Reuses
+  // _buildDaysBetween() (no second copy of the live+archive merge).
+  _buildMonthDays(year, month) {
+    const first = new Date(year, month, 1);
+    const startDow = (first.getDay() + 6) % 7; // 0 = Monday .. 6 = Sunday
+    const gridStart = new Date(year, month, 1 - startDow);
+    const gridEnd   = new Date(gridStart); gridEnd.setDate(gridEnd.getDate() + 41);
+    const todayTs   = dayStart(new Date());
+    return this._buildDaysBetween(dayStart(gridStart), dayStart(gridEnd)).map(day => {
+      const dt = new Date(day.ts);
+      return {
+        ...day,
+        dom:      dt.getDate(),
+        outside:  dt.getMonth() !== month,
+        isToday:  day.ts === todayTs,
+        isFuture: day.ts > todayTs,
+      };
+    });
   }
 
   // Vault/project overview (01.09.2026) — reduces a _buildDayRange() series (each day already
@@ -2686,6 +2969,20 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .cache-explain strong{color:#f1f5f9}
 .cache-explain .hint{margin-top:10px;font-size:11px;color:#64748b;line-height:1.6}
 .report-section{margin-bottom:16px}
+/* Projects Overview — sub-project detail (v1.8) */
+.proj-toggle{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:#cbd5e1;margin-bottom:6px;cursor:pointer;user-select:none}
+.proj-toggle input{cursor:pointer}
+.proj-detail-note{font-size:11px;color:#64748b;line-height:1.5;margin:2px 0 12px}
+.proj-vault-row.has-sub td:first-child{cursor:pointer}
+.proj-caret{display:inline-block;width:13px;color:#4A90D9;font-size:11px}
+.lead-spacer{display:inline-block;width:13px}
+.proj-subcount{color:#64748b;font-weight:400;font-size:11px;margin-left:7px}
+.proj-subrow td{background:rgba(74,144,217,.055);font-size:11px;color:#94a3b8;border-bottom:1px solid #182234}
+.proj-subrow td:first-child{padding-left:38px;position:relative;color:#cbd5e1}
+.proj-subrow td:first-child::before{content:"";position:absolute;left:22px;top:-8px;height:18px;width:9px;border-left:1px solid #475569;border-bottom:1px solid #475569}
+.proj-subrow:hover td{background:rgba(74,144,217,.1)}
+.proj-subrow .sub-muted{color:#475569}
+.proj-other-row td{color:#64748b;font-style:italic}
 @media(max-width:900px){.kpi-row{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:700px){.cards{grid-template-columns:1fr 1fr}.crow{grid-template-columns:1fr}.cache-cards{grid-template-columns:1fr}.kpi-row{grid-template-columns:1fr}}
 </style>
@@ -2983,7 +3280,10 @@ function applyPeriod(nStr){
   estHtml += '<br><span style="color:#64748b;font-size:11px">'
     + RL.totalSession + ' session-limit hit' + (RL.totalSession !== 1 ? 's' : '')
     + ' &nbsp;·&nbsp; ' + RL.totalWeekly + ' weekly-limit hit' + (RL.totalWeekly !== 1 ? 's' : '')
-    + ' in last 30 days. Anthropic does not publish these limits — all values are empirical.</span>';
+    + ' in last 30 days. Anthropic does not publish these limits — all values are empirical.'
+    + ' Counted from Claude Code activity only (terminal, Obsidian, editors, desktop agent mode);'
+    + ' plain chat in the desktop app or on claude.ai draws on the same plan limit but records no'
+    + ' token counts locally, so a limit was likely reached at a higher total than shown here.</span>';
   estEl.innerHTML = estHtml;
   var tbody = document.getElementById('tRL');
   RL.events.forEach(function(ev) {
@@ -3083,7 +3383,7 @@ function renderReports(){
 // clicks) since it lives outside renderProjects() itself, same pattern as cDailyChart/cCacheChart
 // persisting across applyPeriod() calls.
 var PROJECT_COLS = [
-  { key: 'label',      title: 'Vault',         type: 'string' },
+  { key: 'label',      title: 'Vault / root',  type: 'string' },
   { key: 'tokens',      title: 'Tokens',        type: 'number' },
   { key: 'pct',         title: '%',             type: 'number' },
   { key: 'activeDays',  title: 'Active Days',   type: 'number' },
@@ -3091,6 +3391,17 @@ var PROJECT_COLS = [
   { key: 'lastTs',      title: 'Last Active',   type: 'number' },
 ];
 var projectSort = { key: 'tokens', dir: 'desc' };
+// Sub-project detail toggle (Björn, v1.8) — off by default, so the Projects Overview stays a
+// clean one-row-per-vault table. When switched ON it is a real "show me the detail" mode:
+// every vault with sub-folder drift (p.projects, already computed server-side by
+// _computeProjectOverview() and embedded in D.projects — no second data path) is expanded
+// immediately to its indented sub-rows, styled distinctly (tinted, tree connector, "N sub"
+// badge on the vault) so the two states are visibly different. The per-vault caret then only
+// collapses individual vaults again (opt-out via projCollapsed, not opt-in). Sorting still
+// applies to vault rows only; sub-rows hang off their vault in server-sorted order. State
+// lives outside renderProjects() so it survives re-renders — same pattern as projectSort.
+var projSubDetail = false;
+var projCollapsed = {}; // label -> true: this vault's sub-rows are hidden while detail mode is on
 
 function toggleProjectSort(key){
   if (projectSort.key === key) { projectSort.dir = projectSort.dir === 'asc' ? 'desc' : 'asc'; }
@@ -3098,27 +3409,93 @@ function toggleProjectSort(key){
   renderProjects();
 }
 
+function setProjSubDetail(on){ projSubDetail = on; projCollapsed = {}; renderProjects(); }
+function toggleProjVault(label){ projCollapsed[label] = !projCollapsed[label]; renderProjects(); }
+
 function projectsOverviewTable(){
-  var rows = (D.projects || []).slice();
+  var all = (D.projects || []).slice();
+  if (!all.length) return '<div style="color:#94a3b8;font-size:12px">No vault data recorded yet.</div>';
+  var grand = all.reduce(function(s, p){ return s + (p.tokens || 0); }, 0);
+
   var col = PROJECT_COLS.filter(function(c){ return c.key === projectSort.key; })[0];
-  rows.sort(function(a, b){
-    var cmp = col.type === 'string'
-      ? String(a[col.key]).localeCompare(String(b[col.key]))
-      : (a[col.key] || 0) - (b[col.key] || 0);
-    return projectSort.dir === 'asc' ? cmp : -cmp;
-  });
-  if (!rows.length) return '<div style="color:#94a3b8;font-size:12px">No vault data recorded yet.</div>';
+  function sortRows(arr){
+    return arr.sort(function(a, b){
+      var cmp = col.type === 'string'
+        ? String(a[col.key]).localeCompare(String(b[col.key]))
+        : (a[col.key] || 0) - (b[col.key] || 0);
+      return projectSort.dir === 'asc' ? cmp : -cmp;
+    });
+  }
+
+  // "Vault" is really "the folder each session started in" — a real Obsidian vault in the
+  // common case, but also your home folder, a scratch dir, or the Claude-Desktop agent-mode
+  // bucket. Fold folders below 1% of total into one "Other" summary row so the overview stays
+  // readable (display only — D.projects, the export and the Daily Detail table are untouched).
+  // Only folds when it actually removes clutter (>= 2 such folders).
+  var minor = all.filter(function(p){ return grand > 0 && (p.tokens || 0) / grand < 0.01; });
+  var shown = all, otherRow = null;
+  if (minor.length >= 2) {
+    var folded = {};
+    minor.forEach(function(p){ folded[p.label] = true; });
+    shown = all.filter(function(p){ return !folded[p.label]; });
+    var oTok = minor.reduce(function(s, p){ return s + (p.tokens || 0); }, 0);
+    otherRow = {
+      label: 'Other (' + minor.length + ' folders)',
+      tokens: oTok,
+      pct: grand > 0 ? Math.round(oTok / grand * 100) : 0,
+      activeDays: '—',
+      firstTs: Math.min.apply(null, minor.map(function(p){ return p.firstTs; })),
+      lastTs:  Math.max.apply(null, minor.map(function(p){ return p.lastTs; })),
+      projects: [],
+      _isOther: true,
+    };
+  }
+  sortRows(shown);
+
+  var subVaults = shown.filter(function(p){ return p.projects && p.projects.length; });
+  var anySub = subVaults.length > 0;
+  var toggleBar = anySub
+    ? '<label class="proj-toggle"><input type="checkbox" class="proj-subdetail-cb"' + (projSubDetail ? ' checked' : '') + '>Show sub-project detail</label>'
+    : '';
+  var caption = '<p class="proj-detail-note">One row per folder a Claude Code session started in. Your Obsidian vault is one such folder; <strong>Claude Desktop (Agent Mode)</strong> is the desktop app\\'s agent-mode sessions, not a folder'
+    + (otherRow ? '; folders below 1% of the total are grouped into <strong>Other</strong>' : '')
+    + '.'
+    + (projSubDetail && anySub ? ' With sub-project detail on, a sub-row\\'s Tokens and % are that sub-folder\\'s share of its vault; the other columns apply at vault level only.' : '')
+    + '</p>';
 
   var head = PROJECT_COLS.map(function(c){
     var arrow = c.key === projectSort.key ? (projectSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
     return '<th style="cursor:pointer;user-select:none" onclick="toggleProjectSort(\\''+c.key+'\\')" title="Click to sort">'+c.title+arrow+'</th>';
   }).join('');
-  var body = rows.map(function(p){
+
+  var render = (otherRow ? shown.concat([otherRow]) : shown);
+  var body = render.map(function(p){
     var first = new Date(p.firstTs).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
     var last  = new Date(p.lastTs).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
-    return '<tr><td>'+p.label+'</td><td style="color:#f1f5f9;font-weight:600">'+fN(p.tokens)+'</td><td>'+p.pct+'%</td><td>'+p.activeDays+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
+    if (p._isOther) {
+      return '<tr class="proj-other-row"><td>'+p.label+'</td><td style="color:#cbd5e1;font-weight:600">'+fN(p.tokens)+'</td><td>'+p.pct+'%</td><td>'+p.activeDays+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
+    }
+    var hasSub = projSubDetail && p.projects && p.projects.length;
+    var open = hasSub && !projCollapsed[p.label];
+    var lead = hasSub
+      ? '<span class="proj-caret" data-label="'+encodeURIComponent(p.label)+'">'+(open?'▾':'▸')+'</span> '
+      : (projSubDetail && anySub ? '<span class="lead-spacer"></span> ' : '');
+    var badge = hasSub ? '<span class="proj-subcount">'+p.projects.length+' sub</span>' : '';
+    var rowCls = 'proj-vault-row' + (hasSub ? ' has-sub' : '');
+    var labelCell = hasSub
+      ? '<td data-label="'+encodeURIComponent(p.label)+'" class="proj-vault-label">'+lead+p.label+badge+'</td>'
+      : '<td>'+lead+p.label+'</td>';
+    var tr = '<tr class="'+rowCls+'">'+labelCell+'<td style="color:#f1f5f9;font-weight:600">'+fN(p.tokens)+'</td><td>'+p.pct+'%</td><td>'+p.activeDays+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
+    if (open) {
+      tr += p.projects.map(function(s){
+        return '<tr class="proj-subrow"><td>'+s.label+'</td>'
+          + '<td>'+fN(s.tokens)+'</td><td>'+s.pct+'%</td>'
+          + '<td class="sub-muted">–</td><td class="sub-muted">–</td><td class="sub-muted">–</td></tr>';
+      }).join('');
+    }
+    return tr;
   }).join('');
-  return '<table><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';
+  return toggleBar + caption + '<table><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table>';
 }
 
 // Sortable Daily Detail (Björn, 01.09.2026, bug/feature report against v1.7.0 testing) — same
@@ -3177,6 +3554,15 @@ function renderProjects(n){
   }
 
   document.getElementById('paneProjects').innerHTML = html;
+
+  // Sub-project detail (v1.8) — wire the checkbox + per-vault collapse after innerHTML. Handlers
+  // (not inline onclick) so the vault label never has to be escaped into an attribute string;
+  // it round-trips via encodeURIComponent/decodeURIComponent in a data- attribute instead.
+  var subCb = document.querySelector('#paneProjects .proj-subdetail-cb');
+  if (subCb) subCb.onchange = function(){ setProjSubDetail(subCb.checked); };
+  Array.prototype.forEach.call(document.querySelectorAll('#paneProjects .proj-vault-label'), function(el){
+    el.onclick = function(){ toggleProjVault(decodeURIComponent(el.getAttribute('data-label'))); };
+  });
 }
 
 renderKpiRow();
@@ -3248,6 +3634,18 @@ function buildSettingsUI(containerEl, app, plugin, refreshUI) {
         await plugin.saveSettings();
         // Display only — no data changed, so render() (not refresh()) is enough, same
         // pattern as the language switch above.
+        app.workspace.getLeavesOfType(VIEW_TYPE).forEach(l => {
+          if (l.view instanceof AnthropicUsageView) l.view.render();
+        });
+      }));
+  new obsidian.Setting(containerEl)
+    .setName(t('settingCalendar'))
+    .setDesc(t('settingCalendarDesc'))
+    .addToggle(tg => tg.setValue(plugin.settings.calendarVisible !== false)
+      .onChange(async v => {
+        plugin.settings.calendarVisible = v;
+        await plugin.saveSettings();
+        // Display only — render() (not refresh()), same pattern as the two dropdowns above.
         app.workspace.getLeavesOfType(VIEW_TYPE).forEach(l => {
           if (l.view instanceof AnthropicUsageView) l.view.render();
         });
@@ -3344,6 +3742,13 @@ class AnthropicUsageSettingTab extends obsidian.PluginSettingTab {
 // with each release that has user-facing highlights worth surfacing (skip pure bugfix
 // releases — see AnthropicUsagePlugin._maybeShowWhatsNew()).
 const WHATS_NEW_HIGHLIGHTS = {
+  '1.8.0': [
+    'Activity calendar (NextGen sidebar) — a month grid pinned to the bottom of every rail page, one colored dot per day sized against your own recent daily average. Navigate back through your history; toggle it off in Settings if you prefer',
+    'Claude desktop app usage now counts — the agent mode built into the desktop app runs Claude Code and writes the same session logs; the plugin now reads those too, so that consumption no longer goes missing from your totals and estimates',
+    'Dashboard: expandable sub-project detail — the Projects view stays one row per vault by default, but you can now expand any vault to see the per-subfolder breakdown inline, not just in the Markdown export',
+    'Clearer scope — a new "What is measured" glossary entry and dashboard note spell out that the plugin covers Claude Code everywhere, but not ordinary Claude chat (which writes no local token counts)',
+    'A proper manual is taking shape at langeatn.de/media/token-usage/manual/ — chapter outline is live, content fills in over the next releases',
+  ],
   '1.7.1': [
     'NextGen sidebar (opt-in, Settings → Sidebar appearance) — icon rail navigation, a 7-day activity heatmap, and colored KPI tiles with trend sparklines',
     'Vault Token Usage Controlling — the Dashboard\'s new Projects view breaks token usage down by vault and sub-project, so you can track and compare consumption across multiple vaults (e.g. separate client workspaces) from one place, with a day-by-vault detail table and a standalone Markdown export for billing',
