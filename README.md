@@ -4,6 +4,8 @@ Token Usage is an Obsidian plugin that tracks Claude Code token consumption from
 
 Instead of relying on API access or external dashboards, Token Usage reads Claude Code's local JSONL files and displays real-time token statistics directly inside Obsidian — broken down by type, time range, and model.
 
+**[Full documentation & manual](https://www.langeatn.de/media/token-usage/)** — installation, data sources & transparency, core concepts, settings reference, and an FAQ, all on one searchable page (English, German, French).
+
 > **For power users:** Token Usage tracking is machine-wide by default (see [How It Works](#how-it-works)) — but the **[Vault / Project Breakdown](#vault--project-breakdown)** splits that back down by working directory, so you can see exactly which client, project, or vault consumed how many tokens and when. Export it as a standalone Markdown report to hand to a client as a usage/billing reference.
 
 ---
@@ -185,7 +187,7 @@ The glossary explains:
 - How sessions are counted
 - Approximate API cost reference per model
 
-A link at the bottom of the glossary opens the full help page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser. The page is available in English and German.
+A link at the bottom of the glossary opens the full documentation page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser — installation, data sources & transparency, core concepts, the archive, the dashboard, every setting, pricing, and an FAQ, all on one searchable page. The page is available in English, German, and French.
 
 ---
 
@@ -340,7 +342,7 @@ Contributions, bug reports, feature requests, and suggestions are welcome.
 
 If you encounter a problem or have an idea for improvement, please open an issue in the GitHub repository.
 
-Full documentation and glossary: [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) · Manual (in progress): [langeatn.de/media/token-usage/manual/](https://www.langeatn.de/media/token-usage/manual/)
+Full documentation, glossary, and manual — installation, data sources & transparency, core concepts, settings reference, FAQ, all searchable on one page: [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/)
 
 ---
 
