@@ -95,6 +95,9 @@ const DEFAULT_SETTINGS = {
   // NextGen activity calendar (v1.8) — month grid pinned to the bottom of the NextGen
   // sidebar, one colored dot per day. Default on; Classic sidebar is never affected.
   calendarVisible: true,
+  // Per-day free-text notes on the activity calendar (v1.9), keyed by 'YYYY-MM-DD'. Purely
+  // local, never read by anything else in the plugin — a personal annotation layer only.
+  dailyComments: {},
 };
 
 // Logo SVG — compact bar chart using plugin accent colors
@@ -134,6 +137,10 @@ const HELP_SECTIONS = [
   {
     title: 'The three time views',
     body:  'Three independent cuts through the same data — they do not nest automatically.\n\nLast 5 Hour Session — rolling window matching Claude\'s rate-limit period. Counts toward your usage limit.\n\nThis Session — all entries with the current session ID, regardless of calendar date. A Claude Code session can span multiple days. If you started a session yesterday and are still in it today, This Session will show more tokens than Today. That is expected — the session accumulates across calendar boundaries.\n\nToday — calendar day since midnight, regardless of which session the tokens came from.\n\nThe sub-label under each title shows its exact scope at a glance. Full explanation at langeatn.de/media/token-usage/',
+  },
+  {
+    title: 'Rate limit estimates',
+    body:  'Anthropic doesn\'t publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits (shown in the dashboard\'s Limit Hero banner and the sidebar\'s Today & This Week cards).\n\nThe estimate isn\'t static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.',
   },
   {
     title: 'NextGen Sidebar',
@@ -264,6 +271,20 @@ const STRINGS = {
     calNext:          'Next month',
     settingCalendar:     'Activity calendar (NextGen)',
     settingCalendarDesc: 'Shows a month calendar at the bottom of the NextGen sidebar with one colored dot per day, sized against your recent daily average (green below, amber around, red well above). The Classic sidebar is unaffected.',
+    calNoteTitle:     (d) => `Note — ${d}`,
+    calNotePlaceholder: 'Add a note about this day\'s usage (optional)...',
+    calNoteSave:      'Save',
+    calNoteDelete:    'Delete note',
+    calNoteCancel:    'Cancel',
+    calNoteAdd:       'Click to add a note',
+    calNoteEdit:      'Click to edit note',
+    limitPulseTitle:    'Today & This Week',
+    limitPulseToday:    'Today',
+    limitPulseWeek:     'This Week',
+    limitPulseOfDaily:  (p) => `${p}% of fair daily share`,
+    limitPulseOfWeekly: (p) => `${p}% of est. weekly limit`,
+    limitPulseNoWeekly: 'Weekly limit not yet estimated — needs one observed weekly-limit hit.',
+    limitPulseFooter:   'Empirical, not published by Anthropic — gets more precise the more you use Claude Code.',
     helpSections:     HELP_SECTIONS,
   },
   de: {
@@ -347,6 +368,20 @@ const STRINGS = {
     calNext:          'Nächster Monat',
     settingCalendar:     'Aktivitätskalender (NextGen)',
     settingCalendarDesc: 'Zeigt unten in der NextGen-Sidebar einen Monatskalender mit einem farbigen Punkt pro Tag, gewichtet gegen deinen jüngsten Tagesdurchschnitt (grün darunter, gelb um den Schnitt, rot deutlich darüber). Die Classic-Sidebar bleibt unberührt.',
+    calNoteTitle:     (d) => `Notiz — ${d}`,
+    calNotePlaceholder: 'Notiz zum Tagesverbrauch hinzufügen (optional)...',
+    calNoteSave:      'Speichern',
+    calNoteDelete:    'Notiz löschen',
+    calNoteCancel:    'Abbrechen',
+    calNoteAdd:       'Klicken, um eine Notiz hinzuzufügen',
+    calNoteEdit:      'Klicken, um die Notiz zu bearbeiten',
+    limitPulseTitle:    'Heute & diese Woche',
+    limitPulseToday:    'Heute',
+    limitPulseWeek:     'Diese Woche',
+    limitPulseOfDaily:  (p) => `${p}% des fairen Tagesanteils`,
+    limitPulseOfWeekly: (p) => `${p}% des geschätzten Wochenlimits`,
+    limitPulseNoWeekly: 'Wochenlimit noch nicht geschätzt — braucht mindestens einen beobachteten Weekly-Limit-Hit.',
+    limitPulseFooter:   'Empirisch, nicht von Anthropic veröffentlicht — wird präziser, je mehr du Claude Code nutzt.',
     helpSections: [
       {
         title: 'Token',
@@ -375,6 +410,10 @@ const STRINGS = {
       {
         title: 'Die drei unterschiedlichen Zeitansichten in der Übersicht',
         body:  'Es gibt drei unabhängige Ausschnitte aus denselben Daten — sie sind nicht automatisch ineinander verschachtelt.\n\nDie Letzte 5-Stunden-Session — rollierendes Fenster passend zu Claudes Rate-Limit-Zeitraum. Zählt zu deinem Nutzungslimit.\n\nDiese Session — alle Einträge mit der aktuellen Session-ID, unabhängig vom Kalenderdatum. Eine Claude Code Session kann mehrere Tage umfassen. Wenn du eine Session gestern begonnen hast und heute noch darin weiterarbeitest, zeigt "Diese Session" mehr Tokens als "Heute". Das ist so gewollt und designt — die Session akkumuliert über Kalendergrenzen hinweg.\n\nHeute — Kalendertag seit Mitternacht, unabhängig davon, aus welcher Session die Token stammen.\n\nDie Beschreibung unter jedem Titel zeigt den genauen Geltungsbereich auf einen Blick. Du findest eine vollständige Erklärung auf langeatn.de/media/token-usage/',
+      },
+      {
+        title: 'Empirische Limit-Schätzung',
+        body:  'Anthropic veröffentlicht das tatsächliche Token-Limit hinter einem Rate-Limit-Hit nicht — es existiert serverseitig und bleibt unsichtbar. Token Usage macht es stattdessen empirisch sichtbar: jeder erkannte Rate-Limit-Hit wird zu einem Datenpunkt, und genug Datenpunkte ergeben eine Schätzung deines eigenen Session- und Wochenlimits (zu sehen im Limit-Hero-Banner des Dashboards und in den Today & This Week-Karten der Seitenleiste).\n\nDie Schätzung ist nicht statisch — sie wird mit der Zeit ganz automatisch präziser, je länger du Claude Code nutzt. Jeder neue Rate-Limit-Hit verfeinert sie weiter, sodass die Zahl, die du heute siehst, verlässlicher ist als die aus deiner ersten Woche.',
       },
       {
         title: 'NextGen-Seitenleiste',
@@ -495,6 +534,20 @@ const STRINGS = {
     calNext:          'Mois suivant',
     settingCalendar:     'Calendrier d\'activité (NextGen)',
     settingCalendarDesc: 'Affiche en bas de la barre latérale NextGen un calendrier mensuel avec une pastille colorée par jour, pondérée par rapport à votre moyenne quotidienne récente (vert en dessous, ambre autour, rouge nettement au-dessus). La barre latérale Classic n\'est pas affectée.',
+    calNoteTitle:     (d) => `Note — ${d}`,
+    calNotePlaceholder: 'Ajouter une note sur la consommation de ce jour (facultatif)...',
+    calNoteSave:      'Enregistrer',
+    calNoteDelete:    'Supprimer la note',
+    calNoteCancel:    'Annuler',
+    calNoteAdd:       'Cliquez pour ajouter une note',
+    calNoteEdit:      'Cliquez pour modifier la note',
+    limitPulseTitle:    'Aujourd\'hui et cette semaine',
+    limitPulseToday:    'Aujourd\'hui',
+    limitPulseWeek:     'Cette semaine',
+    limitPulseOfDaily:  (p) => `${p}% de la part quotidienne équitable`,
+    limitPulseOfWeekly: (p) => `${p}% de la limite hebdomadaire estimée`,
+    limitPulseNoWeekly: 'Limite hebdomadaire pas encore estimée — nécessite au moins un dépassement hebdomadaire observé.',
+    limitPulseFooter:   'Empirique, non publiée par Anthropic — devient plus précise à mesure que vous utilisez Claude Code.',
     helpSections: [
       {
         title: 'Jetons',
@@ -523,6 +576,10 @@ const STRINGS = {
       {
         title: 'Les trois vues temporelles',
         body:  'Trois découpages indépendants des mêmes données — ils ne sont pas automatiquement imbriqués.\n\nDernière session de 5 heures — fenêtre glissante correspondant à la période de limitation de débit de Claude. Elle est prise en compte dans votre limite d\'utilisation.\n\nCette session — toutes les entrées portant l\'ID de la session actuelle, quelle que soit la date. Une session Claude Code peut s\'étendre sur plusieurs jours. Si vous avez commencé une session hier et la poursuivez aujourd\'hui, Cette session affichera plus de tokens qu\'Aujourd\'hui. C\'est normal — la session s\'accumule au-delà des limites calendaires.\n\nAujourd\'hui — jour calendaire depuis minuit, indépendamment de la session d\'origine des tokens.\n\nLe sous-libellé sous chaque titre indique immédiatement son périmètre exact. Explication complète sur langeatn.de/media/token-usage/',
+      },
+      {
+        title: 'Estimation empirique des limites',
+        body:  'Anthropic ne publie pas la limite de tokens réelle derrière un rate-limit hit — elle existe côté serveur et reste invisible. Token Usage la rend visible de façon empirique : chaque rate-limit hit détecté devient un point de données, et suffisamment de points de données donnent une estimation de vos propres limites de session et hebdomadaire (visibles dans la bannière Limit Hero du tableau de bord et dans les cartes Today & This Week de la barre latérale).\n\nCette estimation n\'est pas statique — elle devient discrètement plus précise à mesure que vous utilisez Claude Code. Chaque nouveau rate-limit hit l\'affine davantage, si bien que le chiffre affiché aujourd\'hui est plus fiable que celui de votre première semaine.',
       },
       {
         title: 'Barre latérale NextGen',
@@ -643,6 +700,20 @@ const STRINGS = {
     calNext:          'Mese successivo',
     settingCalendar:     'Calendario attività (NextGen)',
     settingCalendarDesc: 'Mostra in fondo alla barra laterale NextGen un calendario mensile con un punto colorato per giorno, ponderato rispetto alla tua media giornaliera recente (verde sotto, ambra intorno, rosso ben sopra). La barra laterale Classic non è interessata.',
+    calNoteTitle:     (d) => `Nota — ${d}`,
+    calNotePlaceholder: 'Aggiungi una nota sul consumo di oggi (facoltativo)...',
+    calNoteSave:      'Salva',
+    calNoteDelete:    'Elimina nota',
+    calNoteCancel:    'Annulla',
+    calNoteAdd:       'Clicca per aggiungere una nota',
+    calNoteEdit:      'Clicca per modificare la nota',
+    limitPulseTitle:    'Oggi e questa settimana',
+    limitPulseToday:    'Oggi',
+    limitPulseWeek:     'Questa settimana',
+    limitPulseOfDaily:  (p) => `${p}% della quota giornaliera equa`,
+    limitPulseOfWeekly: (p) => `${p}% del limite settimanale stimato`,
+    limitPulseNoWeekly: 'Limite settimanale non ancora stimato — serve almeno un limite settimanale osservato.',
+    limitPulseFooter:   'Empirico, non pubblicato da Anthropic — diventa più preciso quanto più usi Claude Code.',
     helpSections: [
       {
         title: 'Token',
@@ -671,6 +742,10 @@ const STRINGS = {
       {
         title: 'Le tre viste temporali',
         body:  'Tre viste indipendenti sugli stessi dati — non sono automaticamente annidate.\n\nUltima sessione di 5 ore — finestra mobile corrispondente al periodo del limite di utilizzo di Claude. Conta ai fini del limite di utilizzo.\n\nQuesta sessione — tutte le voci con l\'ID della sessione corrente, indipendentemente dalla data di calendario. Una sessione di Claude Code può durare più giorni. Se hai iniziato una sessione ieri e la stai ancora usando oggi, Questa sessione mostrerà più token di Oggi. È previsto — la sessione si accumula oltre i confini del calendario.\n\nOggi — giorno di calendario da mezzanotte, indipendentemente dalla sessione da cui provengono i token.\n\nIl sottotitolo sotto ogni titolo mostra subito l\'ambito esatto. Spiegazione completa su langeatn.de/media/token-usage/',
+      },
+      {
+        title: 'Stima empirica dei limiti',
+        body:  'Anthropic non pubblica il limite di token reale dietro un rate-limit hit — esiste lato server e resta invisibile. Token Usage lo rende visibile in modo empirico: ogni rate-limit hit rilevato diventa un punto dati, e punti dati sufficienti diventano una stima dei tuoi limiti personali di sessione e settimanali (visibili nel banner Limit Hero della dashboard e nelle card Today & This Week della barra laterale).\n\nLa stima non è statica — diventa silenziosamente più precisa quanto più usi Claude Code. Ogni nuovo rate-limit hit la affina ulteriormente, quindi il numero che vedi oggi è più affidabile di quello della tua prima settimana.',
       },
       {
         title: 'Barra laterale NextGen',
@@ -854,6 +929,73 @@ function computeFocusScore(sessMap, reuseRatio, activeDays, totalReqs) {
   };
 }
 
+// Rate-limit estimates (extracted 14.09.2026 from what used to be inline-only in
+// _buildDashboard(), so the Sidebar's new Limit Pulse widget can compute the exact same
+// sessionEst/weeklyLimitEst numbers as the Dashboard's Limit Hero — one source of truth, the two
+// can never drift apart). Dedupes raw rate-limit events (weekly: max 1 per billing week; session:
+// 15-min window, since parallel sessions can fire within seconds of each other — oldest kept as
+// the causal one each time), then derives the session-limit estimate (min/max/median of observed
+// 5h-window totals at session-limit hits) and the weekly-limit estimate (lowest observed
+// billing-week total among weeks that actually hit the weekly limit — a conservative lower bound).
+function computeRateLimitEstimates(rateLimitEvents, entries30sorted, now) {
+  const rlRaw = (rateLimitEvents || []).slice().sort((a, b) => a.timestamp - b.timestamp);
+  const rlDeduped = [];
+  const seenBillingWeeks = new Set();
+  let lastSessionTs = 0;
+  for (const ev of rlRaw) {
+    if (ev.type === 'weekly') {
+      const wk = billingWeekStart(ev.timestamp);
+      if (!seenBillingWeeks.has(wk)) { seenBillingWeeks.add(wk); rlDeduped.push(ev); }
+    } else {
+      if (ev.timestamp - lastSessionTs > 15 * 60_000) { rlDeduped.push(ev); lastSessionTs = ev.timestamp; }
+    }
+  }
+  const rlEvents = rlDeduped.map(ev => {
+    const wStart = ev.timestamp - 5 * 3_600_000;
+    const tok5h  = entries30sorted
+      .filter(e => e.timestamp >= wStart && e.timestamp <= ev.timestamp)
+      .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+    let tokWeek = 0;
+    if (ev.type === 'weekly') {
+      const wkStart = billingWeekStart(ev.timestamp);
+      tokWeek = entries30sorted
+        .filter(e => e.timestamp >= wkStart && e.timestamp <= ev.timestamp)
+        .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+    }
+    return Object.assign({}, ev, { tok5h, tokWeek });
+  });
+  const sessHits = rlEvents.filter(r => r.type === 'session' && r.tok5h > 50_000);
+  const sessionEst = sessHits.length > 0 ? {
+    n:      sessHits.length,
+    min:    Math.min.apply(null, sessHits.map(r => r.tok5h)),
+    max:    Math.max.apply(null, sessHits.map(r => r.tok5h)),
+    median: sessHits.map(r => r.tok5h).sort((a, b) => a - b)[Math.floor(sessHits.length / 2)],
+  } : null;
+  const curWkStart = billingWeekStart(now.getTime());
+  const weekBuckets = [];
+  for (let i = 5; i >= 0; i--) {
+    const wStart = curWkStart - i * 7 * 86_400_000;
+    const wEnd   = wStart + 7 * 86_400_000;
+    const wTok   = entries30sorted
+      .filter(e => e.timestamp >= wStart && e.timestamp < wEnd)
+      .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+    const hitWeekly = rlEvents.some(r => r.type === 'weekly' && r.timestamp >= wStart && r.timestamp < wEnd);
+    const wLabel = new Date(wStart).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
+      + '–' + new Date(wEnd - 86_400_000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
+    weekBuckets.push({ label: wLabel, tokens: wTok, hitWeekly });
+  }
+  const weeklyHitWks = weekBuckets.filter(w => w.hitWeekly && w.tokens > 0);
+  const weeklyLimitEst = weeklyHitWks.length > 0
+    ? Math.min.apply(null, weeklyHitWks.map(w => w.tokens))
+    : null;
+  return {
+    rlEvents, sessionEst, weeklyLimitEst, weekBuckets,
+    weeklyHits:   weeklyHitWks.length,
+    totalSession: rlEvents.filter(r => r.type === 'session').length,
+    totalWeekly:  rlEvents.filter(r => r.type === 'weekly').length,
+  };
+}
+
 // Week Status (Phase 1) — where the current billing week stands: token totals per day so far, a
 // 3-day rolling-average forecast to Sunday 18:00, and an on-track verdict against the empirical
 // weekly-limit estimate (same source as the Rate Limits section — Anthropic publishes no
@@ -1020,14 +1162,26 @@ function collectFromProjectsDir(projectsDir, files) {
   } catch(e) {}
 }
 
-// Anchors under which Claude Desktop keeps its agent-mode sessions. Two installation flavours:
+// Anchors under which Claude Desktop keeps its agent-mode sessions — a Windows-only concept.
+// On Windows, the desktop app's embedded Claude Code runs inside an app-container/MSIX sandbox
+// that virtualises the filesystem, so its agent-mode sessions physically land in a separate
+// location instead of the ordinary ~/.claude/projects/ that CLAUDE_DIR already reads:
 //   MSIX/Store  — %LOCALAPPDATA%\Packages\<Claude_hash>\LocalCache\Roaming\Claude\...
 //                 (the app itself only ever sees the virtualised %APPDATA%\Claude path, so the
 //                  cwd recorded inside the files does NOT match this physical location)
 //   classic     — %APPDATA%\Claude\...
 // The package folder is globbed rather than hardcoded so the publisher hash can change.
+//
+// macOS/Linux have no equivalent split (confirmed 13.09.2026 — no MSIX-style app-container layer
+// exists there, and Claude Code — CLI, editor integrations, and the desktop app alike — is
+// documented to write to the same ~/.claude/projects/ everywhere, see
+// https://claude-dev.tools/docs/log-locations). CLAUDE_DIR already covers that location on every
+// platform via os.homedir(), so no separate agent-mode root is needed outside Windows; this
+// function intentionally returns an empty array there rather than guessing an unverified path.
 function getAgentModeRoots() {
   const roots = [];
+  if (process.platform !== 'win32') return roots;
+
   const appData = process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming');
   roots.push(path.join(appData, 'Claude', AGENT_MODE_DIRNAME));
 
@@ -1362,6 +1516,14 @@ class AnthropicUsageView extends obsidian.ItemView {
       const compact7d    = allCompactions.filter(e => e.timestamp >= day7Ts);
       const compactToday = allCompactions.filter(e => e.timestamp >= todayTs);
 
+      // Weekly limit estimate + billing-week-so-far total (v1.9, Sidebar Limit Pulse) — same
+      // computeRateLimitEstimates()/computeWeekStatus() the Dashboard's Limit Hero uses, so the
+      // Sidebar and the Dashboard can never show two different numbers for the same thing.
+      const nowDate      = new Date(now);
+      const entries30Asc = all.slice().sort((a, b) => a.timestamp - b.timestamp);
+      const rlEst        = computeRateLimitEstimates(allRateLimitEvents, entries30Asc, nowDate);
+      const weekStatus   = computeWeekStatus(entries30Asc, nowDate, rlEst.weeklyLimitEst, avgDaily);
+
       this.data = {
         lastAction:   all[0] || null,
         session:      aggregate(sessionEntries),
@@ -1402,6 +1564,14 @@ class AnthropicUsageView extends obsidian.ItemView {
         // Rate-limit events: assistant/<synthetic> entries with error:"rate_limit".
         // Each entry: { timestamp, sessionId, type ('session'|'weekly'), message, reset }
         rateLimitEvents:   allRateLimitEvents,
+        // Sidebar Limit Pulse (v1.9) — today's total vs. a fair daily share of the estimated
+        // weekly limit, and this billing week's total vs. that same weekly-limit estimate.
+        // weeklyLimitEst is null until at least one weekly-limit hit has ever been observed.
+        weekPulse: {
+          weeklyLimitEst: rlEst.weeklyLimitEst,
+          weekSoFar:      weekStatus.soFar,
+          remainingDays:  weekStatus.remainingDays,
+        },
         updatedAt:  new Date(),
       };
 
@@ -1679,7 +1849,48 @@ class AnthropicUsageView extends obsidian.ItemView {
   // This Session + Today — verbatim the same content and renderers Classic uses for these
   // (_renderWindow5h/_renderPeriod/_renderPeriodToday), just moved here so they only show on
   // this one page instead of always inline. Default landing page in NextGen mode.
+  // Sidebar "Limit Pulse" (v1.9, NextGen-only) — Today vs. a fair daily share of the estimated
+  // weekly limit, and this billing week's total vs. that same weekly-limit estimate. Deliberately
+  // the very first thing on the Today page (Björn: "sofort mit einem Blick sehen"), reusing
+  // computeRateLimitEstimates()/computeWeekStatus() so the numbers can never drift from the
+  // Dashboard's Limit Hero — same source, same math, just a more compact presentation.
+  _renderLimitPulse(parent, d) {
+    const wp = d.weekPulse || {};
+    const { body } = this._makeSection(parent, 'limitPulse', t('limitPulseTitle'));
+    if (!wp.weeklyLimitEst) {
+      body.createEl('div', { cls: 'au-section-sub', text: t('limitPulseNoWeekly') });
+      return;
+    }
+    const dailyShare = wp.weeklyLimitEst / 7;
+    const todayTotal = d.today.input + d.today.output;
+    const items = [
+      { lbl: t('limitPulseToday'), val: todayTotal,   target: dailyShare,        subKey: 'limitPulseOfDaily'  },
+      { lbl: t('limitPulseWeek'),  val: wp.weekSoFar, target: wp.weeklyLimitEst, subKey: 'limitPulseOfWeekly' },
+    ];
+    const row = body.createEl('div', { cls: 'au-pulse-row' });
+    for (const it of items) {
+      const pct = Math.round((it.val / it.target) * 100);
+      const verdict = bandedVerdict(pct, [
+        { upTo: 80,       key: 'good' },
+        { upTo: 100,      key: 'warn' },
+        { upTo: Infinity, key: 'bad'  },
+      ]);
+      const item = row.createEl('div', { cls: 'au-pulse-item' });
+      item.createEl('div', { cls: 'au-pulse-lbl', text: it.lbl });
+      // The number itself carries the verdict color too, not just the bar underneath — matches
+      // the Dashboard Limit Hero's behaviour, so the two never disagree on how alarming a
+      // number is meant to look.
+      item.createEl('div', { cls: `au-pulse-val au-pulse-val-${verdict}`, text: fmtTokens(it.val) });
+      const track = item.createEl('div', { cls: 'au-pulse-track' });
+      const fill  = track.createEl('div', { cls: `au-pulse-fill au-pulse-${verdict}` });
+      fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+      item.createEl('div', { cls: 'au-pulse-pct', text: t(it.subKey, pct) });
+    }
+    body.createEl('div', { cls: 'au-section-sub', text: t('limitPulseFooter') });
+  }
+
   _renderTodayPage(el, d) {
+    this._renderLimitPulse(el, d);
     if (d.lastAction) {
       const la  = d.lastAction;
       const sec = el.createEl('div', { cls: 'au-section' });
@@ -1779,24 +1990,46 @@ class AnthropicUsageView extends obsidian.ItemView {
     }
 
     const avg = d.avgDaily || 0;
+    const comments = this.plugin.settings.dailyComments || {};
     for (const c of this._buildMonthDays(this._calYear, this._calMonth)) {
+      const dateKey  = new Date(c.ts).toISOString().slice(0, 10);
+      const noteText = comments[dateKey] || '';
       const cell = grid.createEl('span', {
         cls: 'au-cal-day'
           + (c.outside  ? ' is-outside' : '')
           + (c.isToday  ? ' is-today'   : '')
-          + (c.isFuture ? ' is-future'  : ''),
+          + (c.isFuture ? ' is-future'  : '')
+          + (noteText   ? ' has-comment' : ''),
       });
       cell.createEl('span', { cls: 'au-cal-dom', text: String(c.dom) });
       const total = (c.input || 0) + (c.output || 0);
+      let verdict = null;
       if (!c.isFuture && total > 0 && avg > 0) {
-        const verdict = bandedVerdict(total / avg, [
+        verdict = bandedVerdict(total / avg, [
           { upTo: 1,        key: 'good' }, // below the recent daily average
           { upTo: 2,        key: 'warn' }, // roughly average up to 2×
           { upTo: Infinity, key: 'bad'  }, // 2× or more — a spike
         ]);
-        const dot = cell.createEl('span', { cls: `au-cal-dot au-cal-dot-${verdict}` });
-        dot.title = new Date(c.ts).toLocaleDateString(loc) + ' · ' + fmtTokens(total);
+        cell.createEl('span', { cls: `au-cal-dot au-cal-dot-${verdict}` });
       }
+      // Tooltip and click target are the WHOLE cell, not just the small dot — a 5px dot is
+      // hard to hit precisely with a mouse, the ~22px cell is not. Every day is clickable to
+      // add/edit a personal note, regardless of whether it has usage data.
+      const dateLabel = new Date(c.ts).toLocaleDateString(loc);
+      const parts = [dateLabel];
+      if (verdict !== null) parts.push(fmtTokens(total));
+      if (noteText) parts.push(t('calNoteEdit') + ': "' + noteText + '"');
+      else parts.push(t('calNoteAdd'));
+      cell.title = parts.join(' · ');
+      cell.addEventListener('click', () => {
+        new DayCommentModal(this.app, c.ts, comments[dateKey], async (newText) => {
+          const next = Object.assign({}, this.plugin.settings.dailyComments || {});
+          if (newText) next[dateKey] = newText; else delete next[dateKey];
+          this.plugin.settings.dailyComments = next;
+          await this.plugin.saveSettings();
+          this.render();
+        }).open();
+      });
     }
   }
 
@@ -2757,76 +2990,19 @@ class AnthropicUsageView extends obsidian.ItemView {
     const avgPerActiveDay = activeDays > 0 ? Math.round(totalTok / activeDays) : 0;
 
     // ── Rate Limit Analysis ─────────────────────────────────────────
-    // Deduplicate type-aware:
-    //   weekly  → max 1 per billing week (once hit, same limit until Sunday 18:00)
-    //   session → 15-min window (parallel sessions can fire within seconds of each other)
-    // In both cases the oldest event is kept — it is the causal one.
-    const rlRaw = (d.rateLimitEvents || []).slice().sort((a, b) => a.timestamp - b.timestamp);
-    const rlDeduped = [];
-    const seenBillingWeeks = new Set();
-    let lastSessionTs = 0;
-    for (const ev of rlRaw) {
-      if (ev.type === 'weekly') {
-        const wk = billingWeekStart(ev.timestamp);
-        if (!seenBillingWeeks.has(wk)) { seenBillingWeeks.add(wk); rlDeduped.push(ev); }
-      } else {
-        if (ev.timestamp - lastSessionTs > 15 * 60_000) { rlDeduped.push(ev); lastSessionTs = ev.timestamp; }
-      }
-    }
-    // Compute token metrics at each rate-limit event:
-    //   tok5h    — 5h rolling window (relevant for session-limit hits)
-    //   tokWeek  — billing-week total up to the event (relevant for weekly-limit hits)
     const entries30sorted = d.entries30.slice().sort((a, b) => a.timestamp - b.timestamp);
-    const rlEvents = rlDeduped.map(ev => {
-      const wStart = ev.timestamp - 5 * 3_600_000;
-      const tok5h  = entries30sorted
-        .filter(e => e.timestamp >= wStart && e.timestamp <= ev.timestamp)
-        .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
-      let tokWeek = 0;
-      if (ev.type === 'weekly') {
-        const wkStart = billingWeekStart(ev.timestamp);
-        tokWeek = entries30sorted
-          .filter(e => e.timestamp >= wkStart && e.timestamp <= ev.timestamp)
-          .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
-      }
-      return Object.assign({}, ev, { tok5h, tokWeek });
-    });
-    // Session limit estimate — use events with enough context (> 50 K = window not nearly empty)
-    const sessHits = rlEvents.filter(r => r.type === 'session' && r.tok5h > 50_000);
-    const rlSessionEst = sessHits.length > 0 ? {
-      n:      sessHits.length,
-      min:    Math.min.apply(null, sessHits.map(r => r.tok5h)),
-      max:    Math.max.apply(null, sessHits.map(r => r.tok5h)),
-      median: sessHits.map(r => r.tok5h).sort((a, b) => a - b)[Math.floor(sessHits.length / 2)],
-    } : null;
-    // Billing week buckets — Sunday 16:00 UTC = 18:00 CEST boundary. billingWeekStart() is now
-    // module-level (Phase 0 of the UI relaunch), shared with computeWeekStatus() below.
-    const curWkStart = billingWeekStart(now.getTime());
-    const weekBuckets = [];
-    for (let i = 5; i >= 0; i--) {
-      const wStart = curWkStart - i * 7 * 86_400_000;
-      const wEnd   = wStart + 7 * 86_400_000;
-      const wTok   = entries30sorted
-        .filter(e => e.timestamp >= wStart && e.timestamp < wEnd)
-        .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
-      const hitWeekly = rlEvents.some(r => r.type === 'weekly' && r.timestamp >= wStart && r.timestamp < wEnd);
-      const wLabel = new Date(wStart).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
-        + '–' + new Date(wEnd - 86_400_000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
-      weekBuckets.push({ label: wLabel, tokens: wTok, hitWeekly });
-    }
-    const weeklyHitWks = weekBuckets.filter(w => w.hitWeekly && w.tokens > 0);
-    const weeklyLimitEst = weeklyHitWks.length > 0
-      ? Math.min.apply(null, weeklyHitWks.map(w => w.tokens))
-      : null;
+    const rlEst = computeRateLimitEstimates(d.rateLimitEvents, entries30sorted, now);
+    const rlEvents = rlEst.rlEvents;
+    const weeklyLimitEst = rlEst.weeklyLimitEst;
 
     const rateLimitPayload = {
       events:       rlEvents.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 30),
-      weeks:        weekBuckets,
-      sessionEst:   rlSessionEst,
+      weeks:        rlEst.weekBuckets,
+      sessionEst:   rlEst.sessionEst,
       weeklyEst:    weeklyLimitEst,
-      weeklyHits:   weeklyHitWks.length,
-      totalSession: rlEvents.filter(r => r.type === 'session').length,
-      totalWeekly:  rlEvents.filter(r => r.type === 'weekly').length,
+      weeklyHits:   rlEst.weeklyHits,
+      totalSession: rlEst.totalSession,
+      totalWeekly:  rlEst.totalWeekly,
     };
 
     // ── Week Status (Phase 1) ─────────────────────────────────────
@@ -2847,6 +3023,11 @@ class AnthropicUsageView extends obsidian.ItemView {
       dist30, hist, sessions: topSess,
       rateLimit: rateLimitPayload,
       weekStatus, focusScore,
+      // Raw (unformatted) current-window totals for the Limit Hero banner — deliberately separate
+      // from reportPayload's pre-formatted strings, since the hero needs real numbers to compute
+      // percentages against the empirical limit estimates above.
+      currentWindow5h: d.window5h.total || 0,
+      todayTotal: (d.today.input || 0) + (d.today.output || 0),
       report: reportPayload,
       projects: this._computeProjectOverview(allDays),
     });
@@ -2927,6 +3108,17 @@ header h1{font-size:22px;font-weight:700;letter-spacing:-0.02em;background:linea
 .tab-btn{background:none;border:none;color:#94a3b8;font-size:11px;font-weight:600;padding:5px 12px;border-radius:4px;cursor:pointer;font-family:inherit}
 .tab-btn.active{background:#334155;color:#f1f5f9}
 select#periodSel{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-size:11px;font-weight:600;padding:5px 8px;border-radius:6px;font-family:inherit;cursor:pointer}
+.limit-hero{margin-bottom:20px}
+.hero-title{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px}
+.hero-title-note{font-size:11px;font-weight:500;color:#64748b}
+.hero-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.hero-panel{background:#1e293b;border:1px solid #334155;border-top:3px solid #64748b;border-radius:8px;padding:14px 16px}
+.hero-label{font-size:10.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.hero-main{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.hero-num{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
+.hero-sub{font-size:10.5px;color:#94a3b8;margin-top:8px;line-height:1.4}
+.hero-unavailable{font-size:11px;color:#64748b;line-height:1.5;padding:14px 0 4px}
+@media(max-width:900px){.hero-row{grid-template-columns:1fr}}
 .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
 .kpi-card{background:#1e293b;border:1px solid #334155;border-left:3px solid #64748b;border-radius:8px;padding:12px 14px;min-height:104px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .kpi-label{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.06em}
@@ -3018,6 +3210,7 @@ tr:hover td{background:rgba(255,255,255,.03)}
   </header>
 
   <div id="paneDash" class="tabpane active">
+    <div class="limit-hero" id="limitHero"></div>
     <div class="kpi-row" id="kpiRow"></div>
 
     <div class="week-card">
@@ -3116,6 +3309,55 @@ function intensityColorJs(ratio, isCurrent){
   else if(ratio<0.5){var t=ratio*2;r=Math.round(82+(245-82)*t);g=Math.round(183+(158-183)*t);b=Math.round(136+(11-136)*t);}
   else{var t=(ratio-0.5)*2;r=Math.round(245+(229-245)*t);g=Math.round(158+(80-158)*t);b=Math.round(11+(80-11)*t);}
   return 'rgba('+r+','+g+','+b+','+(isCurrent?1:0.75)+')';
+}
+
+// Limit Hero (v1.9) — the three empirical numbers Anthropic never publishes, given the
+// prominent top-of-dashboard treatment they were previously missing (session estimate used to
+// be buried in the Rate Limits table further down; weekly only had one KPI card among five).
+// Deliberately shows CURRENT status, not a forecast — renderKpiRow()'s "Limit Health" card
+// already covers the forecast angle, this covers "where do I actually stand right now".
+function heroPanel(label, current, target, sub, unavailableText){
+  if (target == null || target <= 0) {
+    return '<div class="hero-panel"><div class="hero-label">'+label+'</div>'
+      +'<div class="hero-unavailable">'+unavailableText+'</div></div>';
+  }
+  var pct = (current/target)*100;
+  var verdict = pct<=80?'good':(pct<=100?'warn':'bad');
+  var color = VERDICT_HEX[verdict];
+  return '<div class="hero-panel" style="border-top-color:'+color+'">'
+    +'<div class="hero-label">'+label+'</div>'
+    +'<div class="hero-main"><div class="hero-num" style="color:'+color+'">'+fN(current)+'</div>'+gaugeSvg(pct,color)+'</div>'
+    +'<div class="hero-sub">'+sub+'</div>'
+    +'</div>';
+}
+function renderLimitHero(){
+  var RL=D.rateLimit, ws=D.weekStatus;
+  var se = RL && RL.sessionEst;
+  var sessionHtml = heroPanel(
+    'Current 5h Session',
+    D.currentWindow5h,
+    se ? se.median : null,
+    se ? (fN(D.currentWindow5h)+' of ~'+fN(se.median)+' median &nbsp;·&nbsp; range '+fN(se.min)+'–'+fN(se.max)+' from '+se.n+' observed hits') : '',
+    'Not enough observed session-limit hits yet (need &gt; 50K tokens in a 5h window when one is hit).'
+  );
+  var dailyShare = ws.weeklyLimitEst ? ws.weeklyLimitEst/7 : null;
+  var dailyHtml = heroPanel(
+    'Today vs. Fair Daily Share',
+    D.todayTotal,
+    dailyShare,
+    dailyShare ? (fN(D.todayTotal)+' of ~'+fN(Math.round(dailyShare))+' &nbsp;·&nbsp; est. weekly limit &divide; 7') : '',
+    'Needs a weekly-limit estimate first (see the Weekly panel).'
+  );
+  var weeklyHtml = heroPanel(
+    'This Billing Week',
+    ws.soFar,
+    ws.weeklyLimitEst,
+    ws.weeklyLimitEst ? (fN(ws.soFar)+' of ~'+fN(ws.weeklyLimitEst)+' estimated &nbsp;·&nbsp; '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left') : '',
+    'No weekly-limit hit observed yet in the last 30 days.'
+  );
+  document.getElementById('limitHero').innerHTML =
+    '<div class="hero-title">Where you actually stand <span class="hero-title-note">— empirical, not published by Anthropic, and gets more precise the more you use Claude Code</span></div>'
+    + '<div class="hero-row">' + sessionHtml + dailyHtml + weeklyHtml + '</div>';
 }
 
 function renderKpiRow(){
@@ -3565,6 +3807,7 @@ function renderProjects(n){
   });
 }
 
+renderLimitHero();
 renderKpiRow();
 renderWeekBar();
 document.getElementById('periodSel').value=String(D.defaultPeriod);
@@ -3742,6 +3985,16 @@ class AnthropicUsageSettingTab extends obsidian.PluginSettingTab {
 // with each release that has user-facing highlights worth surfacing (skip pure bugfix
 // releases — see AnthropicUsagePlugin._maybeShowWhatsNew()).
 const WHATS_NEW_HIGHLIGHTS = {
+  '1.9.0': [
+    'Dashboard: Limit Hero banner — the empirical session, daily-pacing, and weekly limit estimates now get a prominent banner at the very top of the dashboard, above the KPI cards',
+    'Sidebar: Limit Pulse (NextGen) — the same Today/This Week limit percentages now sit at the very top of the Today page too, visible the moment you open the sidebar',
+    'Activity calendar: bigger hover target — the tooltip now lives on the whole day cell, not just the small colored dot, so it is much easier to hit with the mouse',
+    'Activity calendar: per-day notes — click any day to add a short personal note about that day\'s usage (e.g. "big refactor, expected spike"). Purely local, stored in plugin settings, shown as a small marker on the day and in its tooltip',
+    'Cross-platform clarity — Token Usage already worked fully on macOS and Linux: the core session reading has always been platform-neutral (~/.claude/projects/ via os.homedir()), no code change needed there',
+    'The one OS-specific piece — the Claude Desktop Agent Mode session finder added in v1.8.0 — turned out to be a Windows-only necessity, since only the Windows app runs its embedded Claude Code inside an MSIX sandbox that virtualises the filesystem. On macOS/Linux, Agent Mode sessions already land in the same standard location the plugin already reads, so no extra path guessing was needed there',
+    'Removed unverified Windows-Store-style path guessing that had briefly crept into the macOS code path — replaced with a documented, evidence-based platform boundary instead',
+    'Full documentation & manual updated with an explicit Data Sources section for macOS/Linux users at langeatn.de/media/token-usage/',
+  ],
   '1.8.0': [
     'Activity calendar (NextGen sidebar) — a month grid pinned to the bottom of every rail page, one colored dot per day sized against your own recent daily average. Navigate back through your history; toggle it off in Settings if you prefer',
     'Claude desktop app usage now counts — the agent mode built into the desktop app runs Claude Code and writes the same session logs; the plugin now reads those too, so that consumption no longer goes missing from your totals and estimates',
@@ -3757,6 +4010,42 @@ const WHATS_NEW_HIGHLIGHTS = {
     'Configurable Claude data retention — control how long the original session log files are kept on disk, right from the plugin settings',
   ],
 };
+
+// Small free-text note per calendar day (v1.9). Purely local (settings.dailyComments), no
+// connection to any other data path — a personal annotation layer over the activity calendar.
+class DayCommentModal extends obsidian.Modal {
+  constructor(app, dateTs, existingText, onSave) {
+    super(app);
+    this.dateTs = dateTs;
+    this.existingText = existingText || '';
+    this.onSave = onSave; // (newText: string) => void — called with '' to mean "delete"
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('au-day-note-modal');
+    const dateLabel = new Date(this.dateTs).toLocaleDateString(localeFor(_lang),
+      { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    contentEl.createEl('h2', { text: t('calNoteTitle', dateLabel) });
+    const textarea = contentEl.createEl('textarea', { cls: 'au-day-note-textarea' });
+    textarea.value = this.existingText;
+    textarea.placeholder = t('calNotePlaceholder');
+    textarea.rows = 5;
+    // Focus after the modal's own open animation/layout settles, not synchronously.
+    setTimeout(() => textarea.focus(), 0);
+
+    const footer = contentEl.createDiv({ cls: 'au-day-note-footer' });
+    if (this.existingText) {
+      const delBtn = footer.createEl('button', { text: t('calNoteDelete'), cls: 'au-day-note-delete' });
+      delBtn.addEventListener('click', () => { this.onSave(''); this.close(); });
+    }
+    const spacer = footer.createDiv({ cls: 'au-day-note-spacer' });
+    const cancelBtn = footer.createEl('button', { text: t('calNoteCancel') });
+    cancelBtn.addEventListener('click', () => this.close());
+    const saveBtn = footer.createEl('button', { text: t('calNoteSave'), cls: 'mod-cta' });
+    saveBtn.addEventListener('click', () => { this.onSave(textarea.value.trim()); this.close(); });
+  }
+  onClose() { this.contentEl.empty(); }
+}
 
 class WhatsNewModal extends obsidian.Modal {
   constructor(app, version, entries) {

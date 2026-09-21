@@ -641,10 +641,41 @@
   font-size: 10px;
   color: var(--text-muted);
   border-radius: 4px;
+  cursor: pointer;
 }
+.au-cal-day:hover { background: var(--background-modifier-hover); }
 .au-cal-day.is-outside { color: var(--text-faint); opacity: 0.45; }
 .au-cal-day.is-today   { outline: 1px solid var(--au-blue); color: var(--text-normal); }
 .au-cal-day.is-future  { color: var(--text-faint); opacity: 0.3; }
+/* Limit Pulse (v1.9, NextGen Today page) — Today / This Week vs. the empirical limit estimates.
+   Sits at the very top of the page, deliberately compact: two side-by-side mini-cards, a big
+   number, a thin progress bar, and a percentage line. */
+.au-pulse-row{display:flex;gap:8px;}
+.au-pulse-item{flex:1;min-width:0;background:var(--background-secondary);border-radius:6px;padding:8px 10px;}
+.au-pulse-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
+.au-pulse-val{font-size:16px;font-weight:700;color:var(--text-normal);font-variant-numeric:tabular-nums;margin:2px 0 5px;}
+.au-pulse-val.au-pulse-val-good{color:var(--au-green);}
+.au-pulse-val.au-pulse-val-warn{color:var(--au-amber);}
+.au-pulse-val.au-pulse-val-bad {color:var(--au-red);}
+.au-pulse-track{height:4px;border-radius:2px;background:var(--background-modifier-border);overflow:hidden;}
+.au-pulse-fill{height:100%;border-radius:2px;}
+.au-pulse-fill.au-pulse-good{background:var(--au-green);}
+.au-pulse-fill.au-pulse-warn{background:var(--au-amber);}
+.au-pulse-fill.au-pulse-bad {background:var(--au-red);}
+.au-pulse-pct{font-size:10px;color:var(--text-muted);margin-top:4px;line-height:1.3;}
+
+/* Small marker, top-right corner — deliberately distinct from the bottom-center verdict dot so
+   the two never visually merge into one ambiguous shape. */
+.au-cal-day.has-comment::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--au-blue);
+}
 .au-cal-dom { line-height: 1; }
 .au-cal-dot {
   position: absolute;
@@ -803,6 +834,32 @@
 .au-whats-new-footer {
   display: flex;
   justify-content: flex-end;
+}
+
+/* Day note modal (activity calendar, v1.9) */
+.au-day-note-modal h2 {
+  margin-top: 0;
+  font-size: 1.1em;
+}
+.au-day-note-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.95em;
+  padding: 8px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+.au-day-note-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.au-day-note-spacer {
+  flex: 1;
+}
+.au-day-note-delete {
+  color: var(--text-error);
 }
 
 /* ── Help panel ─────────────────────────────────────────────────── */

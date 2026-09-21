@@ -47,6 +47,10 @@ Claude Code already stores detailed usage information locally in JSONL session f
 
 Token Usage brings those insights directly into Obsidian, where many users already manage their projects, notes, and knowledge base.
 
+Anthropic doesn't publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits. Not a guess, not marketing language — a number built from what actually happened on your account.
+
+The estimate isn't static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.
+
 ---
 
 ## How It Works
@@ -107,9 +111,9 @@ Every JSONL entry Claude Code writes already carries a `cwd` field — the exact
 
 ## Screenshot
 
-![Token Usage sidebar panel](docs/screenshot.png)
+![Token Usage dashboard with Limit Hero](docs/screenshot.png)
 
-*Real-time Claude Code token usage in the Obsidian sidebar.*
+*The dashboard with the new Limit Hero: where you stand against your session, daily, and weekly limit estimates.*
 
 ---
 
@@ -327,6 +331,12 @@ The limit is physical, not a bug: the archive can only save what's still on disk
 
 ---
 
+**Platform support: Windows, macOS, and Linux all work the same way.**
+
+The core of the plugin — reading `~/.claude/projects/`, writing the archive, generating reports — has always been platform-neutral (Node's `os.homedir()` resolves correctly everywhere), regardless of what OS you're on. The one platform-specific code path, the Claude Desktop Agent Mode session finder added in v1.8.0, is a Windows-only necessity: the Windows desktop app runs its embedded Claude Code inside an MSIX app-container sandbox that virtualises the filesystem, so Agent Mode sessions physically land somewhere other than the ordinary `~/.claude/projects/`. macOS and Linux have no equivalent sandboxing layer — Agent Mode sessions there (where the feature exists) are expected to land directly in the same `~/.claude/projects/` the plugin already reads, needing no extra code. See [Data Sources & Transparency](https://www.langeatn.de/media/token-usage/#data-sources) in the full documentation for the exact breakdown per platform.
+
+---
+
 ## Contributing
 
 Contributions, bug reports, feature requests, and suggestions are welcome.
@@ -361,6 +371,18 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 ---
 
 ## Changelog
+
+### v1.9.0 — September 2026
+
+- **Dashboard: Limit Hero banner** — the empirical session, daily-pacing, and weekly limit estimates now get a prominent banner at the very top of the dashboard, above the KPI cards, instead of being buried in a KPI card and a data table further down
+- **Sidebar: Limit Pulse (NextGen)** — the same Today-vs-fair-daily-share and this-week-vs-estimated-weekly-limit numbers now sit at the very top of the Today page too, so you see them the moment you open the sidebar, no dashboard needed. Same underlying calculation as the Dashboard's Limit Hero — the two can never show different numbers
+- **Activity calendar: bigger hover target** — the tooltip now lives on the whole day cell, not just the small colored dot, making it much easier to hit with the mouse
+- **Activity calendar: per-day notes** — click any day to add a short personal note about that day's usage. Purely local, stored in plugin settings, shown as a small marker on the day and in its tooltip
+
+- **Cross-platform clarity** — Token Usage already worked fully on macOS and Linux: the core session reading has always been platform-neutral (`~/.claude/projects/` via Node's `os.homedir()`), no code change was needed there
+- **Agent Mode discovery correctly scoped to Windows** — the Claude Desktop Agent Mode session finder added in v1.8.0 turned out to be a Windows-only necessity, since only the Windows app runs its embedded Claude Code inside an MSIX sandbox that virtualises the filesystem. On macOS/Linux, Agent Mode sessions already land in the same standard `~/.claude/projects/` location the plugin already reads — no extra path guessing needed or added there
+- Removed a briefly-added, unverified Windows-Store-style path guess for macOS, replaced with a documented, evidence-based platform boundary in the code (see [claude-dev.tools/docs/log-locations](https://claude-dev.tools/docs/log-locations) for the underlying reference)
+- Documentation updated with an explicit note on where session data lives per platform
 
 ### v1.8.0 — September 2026
 
