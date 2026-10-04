@@ -15,21 +15,25 @@ Instead of relying on API access or external dashboards, Token Usage reads Claud
 - **Vault/project breakdown for power users** — see exactly which vault or client project consumed how many tokens and when, exportable as a standalone Markdown report for client billing (see [Vault / Project Breakdown](#vault--project-breakdown))
 - Live sidebar panel with token breakdown across five time ranges
 - Separate display of all four token types: Input, Output, Cache Write (C.Write), Cache Read (C.Read)
-- Rolling 5-hour session window matching Claude Code's internal rate-limit window
-- Context sub-labels under each section title — shows scope at a glance ("Rolling window · counts toward rate limit", "Started yesterday · spans multiple days", "Calendar day · since midnight")
+- Anchored 5-hour window matching how Anthropic actually meters: it opens with your first message and runs exactly five hours; a new one only starts once that span has elapsed, in fixed chained blocks regardless of pauses, and independently of the weekly reset
+- Context sub-labels under each section title — shows scope at a glance ("Anchored window · counts toward rate limit", "Started yesterday · spans multiple days", "Calendar day · since midnight")
 - Logarithmic scale for minibar widths — keeps all four token types visually proportional even across large magnitude differences
 - Spike warning — amber badge when today's usage is ≥ 2× your personal recent average (window follows your Claude data retention setting)
 - Collapsible sections — all five time-range sections fold individually, state persists across refreshes
-- 7-day bar chart with model distribution — stacked by Haiku, Sonnet, Opus, Fable
+- **Activity heatmap of your billing week** — one row per calendar day, one cell per two hours. Colour shows pace rather than volume: red marks the rate at which you would arrive exactly at the 5-hour wall as the window closes. Collapsible, with an Active Days panel beside it
+- **Two limits, no invented third** — Anthropic enforces a 5-hour window and a weekly cap. There is no daily limit, so the Today figure is not a quota; it compares you against your own recent average per active day
+- **The weekly reset calibrates itself** — the weekly cap resets at an hour that differs per account. The plugin reads that hour out of your own session history and says in Settings whether the value was detected or set by hand
 - Rate limit tracking — session and weekly limit hits auto-detected from local JSONL files, with threshold estimates and 6-week billing chart in the dashboard
+- Model distribution — usage split by Haiku, Sonnet, Opus, and Fable
 - HTML dashboard with 30-day charts, model donut, top sessions table, cache efficiency analysis, and rate limit history
 - Markdown report export directly into your vault
 - Daily archive — compact Markdown summaries written to your vault, so long-term trends survive Claude Code's own 30-day cleanup. Backfills automatically on first install and after any gap
 - Adjustable Claude data retention — read and set `cleanupPeriodDays` directly from Settings, no manual JSON editing
-- Built-in Help panel with full glossary and cost reference, including "The three time views" and "Archive & long-term data" entries
+- **CSV export, two ways** — from the sidebar header into a configurable vault folder, or via the command palette. Three files (projects, daily detail, key figures), RFC 4180 with a UTF-8 BOM so Excel opens them correctly on the first try. The dashboard additionally offers a browser download
+- **Activity calendar over two months** instead of one, so the start of a month is no longer a nearly empty grid
+- Built-in Help panel with a 21-entry glossary and cost reference, including "What counts toward a limit", "Activity heatmap", "Weekly reset" and "Archive & long-term data"
 - "← Back" button in the header returns from the glossary to the data view
-- Language selection — English, German, French, and Italian (community translations welcome)
-- Settings button (⚙) in the header — opens plugin settings with one click
+- Language selection — English, German, French, Italian, and Spanish (community translations welcome)
 - Command Palette integration for all major actions
 - No API key required — reads local files only
 - Local-first and privacy-friendly
@@ -50,6 +54,8 @@ Token Usage brings those insights directly into Obsidian, where many users alrea
 Anthropic doesn't publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits. Not a guess, not marketing language — a number built from what actually happened on your account.
 
 The estimate isn't static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.
+
+The 5-hour estimate is shown as a median together with a usual band, the middle half of your observed hits. The same limit is rarely reached at exactly the same total, because other Claude use that Token Usage cannot see (such as claude.ai in the browser) draws on the same limit, so one number alone would look more precise than it is.
 
 ---
 
@@ -111,28 +117,30 @@ Every JSONL entry Claude Code writes already carries a `cwd` field — the exact
 
 ## Screenshot
 
-![Token Usage dashboard with Limit Hero](docs/screenshot.png)
+![Token Usage dashboard](docs/screenshot.png)
 
-*The dashboard with the new Limit Hero: where you stand against your session, daily, and weekly limit estimates.*
+*The dashboard: where you stand against your 5-hour window and your weekly limit, both estimated from your own measured history.*
 
 ---
 
 ## What You See in the Sidebar
 
-### Last 5 Hour Session
+### Current 5h Window
 
-A rolling window covering the past 5 hours — matching Claude Code's own rate-limit period. Shows Input, Output, C.Write, and C.Read as separate rows. Sub-label: "Rolling window · counts toward rate limit".
+The current anchored 5-hour window — the period Anthropic actually meters. It opens with your first message and runs exactly five hours; a new window only starts once that span has fully elapsed, chained in fixed five-hour blocks regardless of how much idle time falls in between. This is a real window with a real start time, not a sum of the last five hours — and it is independent of the weekly reset, which runs on its own schedule and does not also start a fresh 5-hour window. Shows Input, Output, C.Write, and C.Read as separate rows; only Input and Output count toward the limit. Sub-label: "Anchored window · counts toward rate limit".
 
-### This Session / Today / 7 Days / 30 Days
+The sidebar is organised as an icon rail with four pages: **Today**, **Calendar**, **Analytics**, and **Settings**. The sections below live on Today; the 7-day and N-day figures sit on Analytics as KPI tiles with sparklines.
 
-Four time-range sections, each showing the same four token rows. A small logarithmic bar next to each value keeps all token types visually readable even when magnitudes differ by orders of magnitude (e.g. Input at a few hundred vs C.Read in the millions).
+### This Session / Today
+
+Two time-range sections, each showing the same four token rows. A small logarithmic bar next to each value keeps all token types visually readable even when magnitudes differ by orders of magnitude (e.g. Input at a few hundred vs C.Read in the millions).
 
 **This Session** and **Today** carry a dynamic sub-label explaining their scope:
 
 - **This Session** — shows the session start time ("Started today at 09:27" or "Started yesterday · spans multiple days"). A session in Claude Code can span multiple calendar days — so "This Session" may be larger than "Today". This is expected.
 - **Today** — always shows "Calendar day · since midnight".
 
-These three views — Last 5 Hour Session, This Session, and Today — are independent cuts through the same data. They do not automatically nest inside each other. See the [help page](https://www.langeatn.de/media/token-usage/) for a full explanation.
+These three views — Current 5h Window, This Session, and Today — are independent cuts through the same data. They do not automatically nest inside each other. See the [help page](https://www.langeatn.de/media/token-usage/) for a full explanation.
 
 ### Models (last 7 days)
 
@@ -140,18 +148,22 @@ A stacked percentage bar showing the model distribution across the past 7 days, 
 
 | Model | Color |
 |---|---|
-| Haiku | Cyan |
+| Haiku | Teal |
 | Sonnet | Blue |
-| Opus | Purple |
-| Fable | Amber |
+| Opus | Pink |
+| Fable | Violet |
 | Other | Gray |
+
+Model colours deliberately avoid green, amber, and red. In this plugin those three mean good, warning, and critical — a colour either identifies something or judges it, never both.
 
 ### C.Write and C.Read
 
 Cache Write (C.Write) and Cache Read (C.Read) are shown as separate rows throughout the sidebar because they have very different cost implications:
 
-- **C.Write** (purple) — approximately 1.25× standard input price. A one-time cost to establish the cache.
-- **C.Read** (amber) — approximately 0.10× standard input price. Ten times cheaper than regular input.
+- **C.Write** (aqua) — approximately 1.25× standard input price. A one-time cost to establish the cache.
+- **C.Read** (violet) — approximately 0.10× standard input price. Ten times cheaper than regular input.
+
+Those are cost ratios, not limit ratios. Neither cache type counts toward the 5-hour window or the weekly cap — that was measured against observed limit hits, not assumed from pricing.
 
 The ratio C.Read ÷ C.Write is the Reuse Factor. A high value means the same context is being reused efficiently across many requests.
 
@@ -171,6 +183,8 @@ The dashboard includes:
 - **Top sessions table** — the 10 most token-intensive sessions by date and identifier, live data window only, same reason
 - **Projects tab** — token usage broken down by vault/project: an overview (which vault, total tokens, share of the whole, active days, first/last active date) plus a day-by-vault detail table for the selected Report period. See [Vault / Project Breakdown](#vault--project-breakdown) below.
 
+- **CSV Export menu** in the header, next to the tabs — downloads the projects overview, the daily detail matrix, or the key figures. These go to your browser's download folder, because a page opened in a browser cannot choose a target directory. For files written straight into your vault, use the CSV button in the sidebar header instead; the menu says so at the point where you click
+
 The dashboard uses Chart.js (loaded once from CDN) and works offline after the first load.
 
 ---
@@ -185,13 +199,20 @@ The glossary explains:
 - The difference between Input and Output
 - What C.Write and C.Read mean and why they matter
 - How to read the Reuse Factor
-- What the 5-hour session window represents and why the countdown shows a tilde (~)
-- How the three time views (Last 5 Hour Session, This Session, Today) relate to each other
+- What the anchored 5-hour window represents and why the countdown shows a tilde (~)
+- **What counts toward a limit** — the two real limits, why there is no daily one, and why cache tokens do not count
+- **How to read the activity heatmap** — why it spans eight rows, and why colour means pace rather than volume
+- **Exporting your data** — the two CSV routes and where each one writes
+- **The weekly reset** — how the plugin detects your reset hour and what to do if it cannot
+- How the three time views (5-hour window, This Session, Today) relate to each other
+- How rate limit estimates are derived from your own history
 - How the model colors map to model families
 - How sessions are counted
-- Approximate API cost reference per model
+- What is and is not measured
+- The archive and long-term data
+- Approximate API cost reference per model — costs, not limits
 
-A link at the bottom of the glossary opens the full documentation page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser — installation, data sources & transparency, core concepts, the archive, the dashboard, every setting, pricing, and an FAQ, all on one searchable page. The page is available in English, German, and French.
+A link at the bottom of the glossary opens the full documentation page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser — installation, data sources & transparency, core concepts, the archive, the dashboard, every setting, pricing, and an FAQ, all on one searchable page. The page is available in English, German, French, and Spanish.
 
 ---
 
@@ -262,22 +283,36 @@ No additional setup, API keys, or cloud services required.
 | Create Token Usage report | Writes a Markdown report to your vault |
 | Open Token Usage dashboard | Generates and opens the HTML dashboard |
 | Create Vault Token Usage Projects report | Writes the per-vault/project breakdown as a separate Markdown file to your vault |
+| Export all CSV files | Writes all three CSV files into your configured export folder in the vault |
+| Export projects CSV | Writes the per-vault/project overview as CSV |
+| Export daily detail CSV | Writes the day × vault matrix as CSV |
+| Export key figures CSV | Writes the dashboard key figures as CSV |
+| Show what's new | Re-opens the highlights popup for the installed version |
 
 ---
 
 ## Settings
 
+The order below matches the order on the settings page.
+
 | Setting | Default | Description |
 |---|---|---|
-| Language | English | Display language for the plugin UI. Switches immediately without restart. Available: English, Deutsch, Français, Italiano. |
-| Auto-Refresh (seconds) | 30 | Fallback polling interval in addition to the live file watcher |
+| Language | English | Display language for the plugin UI. Switches immediately without restart. Available: English, Deutsch, Français, Italiano, Español |
+| Weekly reset | detected automatically | The weekday and hour at which your weekly cap resets. The plugin reads this out of your own session history; the status line says whether the value was detected or set by hand. Only worth touching if detection has nothing to go on yet |
+| Report period | 30 days | How far back the dashboard and report look: 30 days, 60 days, 6 months, or 12 months. Beyond your Claude data retention, filled in from the daily archive |
+| Enable daily archive | On | Automatically writes a daily Markdown summary to your vault. Turn off if you don't want the plugin creating files |
+| Claude data retention (days) | 30 | Reads and writes `cleanupPeriodDays` directly in Claude Code's own settings.json. A backup (.bak) is created automatically before each change |
+| Auto-refresh interval (seconds) | 30 | Fallback polling interval in addition to the live file watcher |
+
+**File locations**
+
+| Setting | Default | Description |
+|---|---|---|
 | Report path | Token Usage Report.md | Vault-relative path for the generated Markdown report |
 | Vault report path | Vault_Token_Usage_Projects.md | Vault-relative path for the per-project/vault usage breakdown, a separate file from the main report |
 | Dashboard path | Token Usage Dashboard.html | Vault-relative path for the generated HTML dashboard |
-| Report period | 30 days | How far back the dashboard and report look: 30 days, 60 days, 6 months, or 12 months. Beyond your Claude data retention, filled in from the daily archive |
-| Enable daily archive | On | Automatically writes a daily Markdown summary to your vault. Turn off if you don't want the plugin creating files |
 | Archive folder in vault | Token Usage Archive | Vault-relative folder for the daily archive files |
-| Claude data retention (days) | 30 | Reads and writes `cleanupPeriodDays` directly in Claude Code's own settings.json. A backup (.bak) is created automatically before each change |
+| CSV export folder in vault | Token Usage Exports | Vault-relative folder for CSV files written from the sidebar or the command palette. Does not affect the dashboard's own download, which goes to your browser's download folder |
 
 ---
 
@@ -311,9 +346,11 @@ We review Anthropic's release notes with each Claude Code update and adapt the p
 
 This is not a code bug. Obsidian caches the loaded plugin manifest in memory. Toggling the plugin off and on may not fully reinitialize the manifest object. Fix: perform a full Obsidian restart after updating the plugin files. The correct version will display after restart.
 
-**The weekly consumption chart uses Claude's billing week boundary.**
+**The weekly consumption chart uses your own billing week boundary.**
 
-The dashboard's weekly bar chart aligns to Claude's billing cycle: Sunday 18:00 → Sunday 18:00 Europe/Berlin (= Sunday 16:00 UTC). Weeks where the weekly rate limit was reached are highlighted. Token counts in the rate limits table show the full billing-week total for weekly hits and the 5h window total for session hits — these are the metrics that directly correspond to each limit type.
+The weekly cap resets at a weekday and hour that differs per account, so there is no single correct boundary to hard-code. Up to v1.9.0 the plugin assumed Sunday 18:00 Europe/Berlin, which was right for exactly one timezone and silently wrong everywhere else. Since v2.0.0 it reads your reset hour out of your own session history and aligns the chart to that; Settings shows whether the value was detected or set by hand.
+
+Weeks in which the weekly rate limit was reached are highlighted. Token counts in the rate limits table show the full billing-week total for weekly hits and the 5-hour window total for session hits — these are the metrics that correspond directly to each limit type.
 
 ---
 
@@ -371,6 +408,30 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 ---
 
 ## Changelog
+
+### v2.0.0 — October 2026
+
+Three things this plugin believed about Anthropic's rate limits were wrong. All three are corrected here, which is why your numbers may look different after updating.
+
+**Corrections**
+
+- **There is no daily limit.** Earlier versions measured Today against "a fair daily share" of the weekly cap — a number the plugin invented by dividing the weekly limit by seven. Anthropic enforces no such limit, so that comparison held a real day against an imaginary budget. Today is now shown against your own 29-day average per active day: it claims no quota, it tells you whether today is busier or quieter than usual
+- **The 5-hour window is anchored, not rolling.** It opens with your first message and runs exactly five hours; a new window only starts once that span has fully elapsed, chained in fixed blocks regardless of pauses in between. Previous versions summed "the last five hours from now", which at a window turnover mixed the tail of the old window with the head of the new one — a figure that belonged to neither, precisely when you most wanted to see that your budget had reset
+- **Only input and output count toward a limit.** Cache reads and cache writes do not. This was verified against 80+ observed limit hits rather than assumed: a weighted model was tested, and the weights that best explained the real data were zero for both cache types. The resulting median 5-hour budget matches what users actually observe
+
+**New**
+
+- **Activity heatmap built around your billing week** — one row per calendar day, twelve 2-hour bubbles per row, spanning your actual weekly window from reset hour to reset hour. Because that window touches eight calendar dates, the view shows eight rows, with the cells outside the window visibly inactive. Collapsible, with an Active Days panel beside it
+- **The weekly reset detects itself.** The weekly limit resets at an hour that differs per account. The plugin now calibrates that hour from your own session history instead of asking you to guess it, and says in Settings whether the value was detected or set by hand
+- **CSV export, two ways** — from the sidebar header into a configurable vault folder, or via the command palette. Three files (projects, daily detail, key figures), RFC 4180 with a UTF-8 BOM so Excel opens them correctly on the first try
+- **5-hour estimate with a usual band** — the sidebar and the dashboard show the median and the middle half of your observed hits (for example "usually between 214K and 364K"), and the CSV export carries both ends. The estimate itself is now measured inside the anchored 5-hour windows, the same way the gauge counts, so the two are directly comparable; numbers may therefore shift slightly after updating.
+- **Calendar shows two months** instead of one, so the start of a month is no longer a nearly empty grid
+- **Spanish** — the plugin UI and the full glossary are now available in Spanish, alongside English, German, French, and Italian
+
+**Changed**
+
+- **New look** — the colour world has been rebuilt around one rule: a colour either identifies a token type or signals status, never both. Previously the same green could mean "output tokens" in one panel and "you are fine" in the next
+- **The Classic sidebar has been removed.** What was opt-in as "NextGen" is now simply the sidebar; the Sidebar appearance setting is gone
 
 ### v1.9.0 — September 2026
 

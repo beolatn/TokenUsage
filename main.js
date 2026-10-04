@@ -65,12 +65,22 @@ function writeCleanupPeriodDays(days) {
   }
 }
 
+// Models are the THIRD colour role (v2.0), next to token types and status. Four distinct hues
+// rather than one ramp (Björn, 30.09.2026): model colours only ever appear inside clearly
+// bounded, separately labelled figures — the model bar and the stacked daily chart — so the
+// collision with token colours that a ramp was meant to avoid does not actually arise, and
+// four hues stay far more legible in a stacked bar than four steps of one colour would.
+// Hues picked from Björn's reference image; deliberately no green, yellow or red among them,
+// so they can never be mistaken for a traffic-light verdict.
+// The ORDER matters and is not cosmetic: these same four hues fail colour-blindness
+// separation in other arrangements (blue beside violet measures ΔE 5.6 for deuteranopia —
+// effectively the same colour). In this order every adjacent pair clears the gates.
 const MODEL_COLORS = {
-  Haiku:  '#06B6D4',
-  Sonnet: '#4A90D9',
-  Opus:   '#9B5DE5',
-  Fable:  '#E9C46A',
-  Other:  '#6B7280',
+  Haiku:  '#0D9488',   // Teal
+  Sonnet: '#4A90E2',   // Blue
+  Opus:   '#EC4899',   // Pink
+  Fable:  '#A855F7',   // Violet
+  Other:  '#6B7280',   // Neutral
 };
 
 const DEFAULT_SETTINGS = {
@@ -79,33 +89,63 @@ const DEFAULT_SETTINGS = {
   vaultReportPath: 'Vault_Token_Usage_Projects.md',
   dashboardPath:  'Token Usage Dashboard.html',
   archivePath:    'Token Usage Archive',
+  csvPath:        'Token Usage Exports',
   archiveEnabled: true,
   reportPeriodDays: 30,
   language:       'en',
-  // UI relaunch Phase 2 — 'classic' is the default so existing users see zero change unless
-  // they actively opt in. 'nextgen' adds per-row verdict glyphs to the Today section only;
-  // see _renderPeriodToday()/_statRowNextGen().
-  sidebarMode:    'classic',
+  // sidebarMode removed in v2.0 — Classic is gone, NextGen is the only sidebar. The stale
+  // 'classic'/'nextgen' value in existing users' data.json is simply ignored from here on;
+  // no migration needed because nothing reads the field any more.
   // Tracks the last plugin version the user has seen the "What's new" popup for.
   // null = never recorded yet. See AnthropicUsagePlugin._maybeShowWhatsNew().
   lastSeenVersion: null,
   // Which one-shot archive rebuild has already run. null = none yet.
   // Compared against ARCHIVE_REBUILD_TAG in _archiveDays().
   archiveRebuildDone: null,
-  // NextGen activity calendar (v1.8) — month grid pinned to the bottom of the NextGen
-  // sidebar, one colored dot per day. Default on; Classic sidebar is never affected.
-  calendarVisible: true,
+  // calendarVisible removed in v2.0 — the calendar has its own rail page, so there is nothing
+  // to toggle. A leftover `true`/`false` in an existing data.json is simply ignored.
+  // Weekly reset calibration (v2.0). Anthropic sets the weekly reset per account; `/usage` in
+  // Claude Code reports yours. null = never calibrated, in which case the plugin falls back to
+  // Sunday 18:00 local and says so, rather than pretending the default is your actual schedule.
+  weeklyResetDay:    null,  // 0 = Sunday … 6 = Saturday
+  weeklyResetHour:   null,  // local hour, 0–23
+  weeklyResetSetAt:  null,  // ISO timestamp of the calibration, shown back to the user
+  weeklyResetSource: null,  // 'auto' = read from a weekly-limit message, 'manual' = user set it
+  weeklyResetFrom:   null,  // timestamp of the hit it was read from (auto only)
   // Per-day free-text notes on the activity calendar (v1.9), keyed by 'YYYY-MM-DD'. Purely
   // local, never read by anything else in the plugin — a personal annotation layer only.
   dailyComments: {},
 };
 
-// Logo SVG — compact bar chart using plugin accent colors
-const LOGO_SVG = `<svg width="15" height="12" viewBox="0 0 15 12" fill="none" aria-hidden="true" style="flex-shrink:0">
-  <rect x="0"    y="7" width="2.5" height="5"  rx="0.6" fill="#4A90D9" opacity="0.45"/>
-  <rect x="3.5"  y="3" width="2.5" height="9"  rx="0.6" fill="#4A90D9" opacity="0.65"/>
-  <rect x="7"    y="0" width="2.5" height="12" rx="0.6" fill="#4A90D9"/>
-  <rect x="10.5" y="4" width="2.5" height="8"  rx="0.6" fill="#9B5DE5" opacity="0.80"/>
+// Logo SVG — TU monogram (v2.0, Björn's design). Replaces the old bar-chart icon, which was a
+// generic analytics symbol; the monogram is an actual mark of its own and stays recognisable
+// down to 16px, which the rail needs. The T carries the "good" green, the U runs warning-yellow
+// into critical-red: the traffic light IS the brand, so the logo says what the plugin measures.
+// Drawn as strokes rather than filled letterforms so it needs no font and scales cleanly.
+// The monogram LEADS the lockup and the wordmark is secondary — that is the hierarchy in
+// Björn's logo design (30.09.2026), where a large TU sits above a smaller "Token Usage".
+// So the mark is deliberately about twice the height of the text beside it (24 × 14.7 against
+// a 10px wordmark), not sized down to match it. The exact value is tuned so it sits inside the
+// lockup's border with a little air rather than filling it edge to edge.
+//
+// The viewBox is trimmed to the drawing itself (0.4 2.6 23.3 14.3) rather than a round
+// 0 0 24 20: with the stroke width counted in, the glyphs span y 2.6–16.9, so the round box
+// carried 2.6 of padding above and 3.1 below — a built-in, uneven margin that tilted the mark
+// against anything placed next to it.
+//
+// display:block matters. An SVG defaults to inline, and an inline box sits on a text baseline
+// with descender space reserved underneath it — which silently pushes the mark upward inside
+// its container. As a block it has no baseline of its own, so the flex centring is the only
+// thing positioning it.
+const LOGO_SVG = `<svg width="24" height="14.7" viewBox="0.4 2.6 23.3 14.3" fill="none" aria-hidden="true" style="flex-shrink:0;display:block">
+  <defs>
+    <linearGradient id="tuU" x1="14.3" y1="3" x2="22.3" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FAB219"/>
+      <stop offset="1" stop-color="#D03B3B"/>
+    </linearGradient>
+  </defs>
+  <path d="M1.8 4 H10.8 M6.3 4 V15.5" stroke="#0CA30C" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M14.3 4 V11.5 A4 4 0 0 0 22.3 11.5 V4" stroke="url(#tuU)" stroke-width="2.8" stroke-linecap="round"/>
 </svg>`;
 
 // Glossary entries shown in the help panel
@@ -132,23 +172,39 @@ const HELP_SECTIONS = [
   },
   {
     title: '5h Window',
-    body:  'Rolling 5-hour window matching Claude\'s rate-limit period. "Claude 5h resets in: ~Xh Ym" counts down to the next reset.\n~ = approximation: session files are written after each response completes, not at session start. May lag 10–25 min. For the precise time, check Claude Code or claude.ai.',
+    body:  'Anchored 5-hour window matching Claude\'s rate-limit period. It opens with your first message and runs exactly five hours. A new window only begins once that span has fully elapsed — windows are chained in fixed five-hour blocks; a pause in the middle of one does not start a fresh window, and working without a break does not keep one open past its five hours. It is not a rolling "last five hours". This is independent of the weekly reset: the weekly cap resets on its own schedule and does not force a new 5-hour window to start at the same time.\n"Claude 5h resets in: ~Xh Ym" counts down to the end of the open window.\n~ = approximation: session files are written after each response completes, not at session start. May lag 10–25 min. For the precise time, check Claude Code or claude.ai.',
+  },
+  {
+    title: 'What counts toward a limit',
+    body:  'Anthropic enforces two limits and nothing else: the 5-hour window above, and a weekly cap that resets at a fixed weekday and hour. There is no daily limit — so the Today panel is not a quota, it compares you against your own recent average.\n\nOnly input and output tokens count. Cache reads and cache writes are real volume and are shown in full in their own rows, but they do not move you toward either limit. This was measured, not assumed: for every observed limit hit the plugin totals the window in several ways, and input + output is by far the most consistent at the moment work stops.\n\nNeither limit is published. Both estimates come from your own history, which is why the plugin can only show them once it has seen you hit a limit at least once.',
+  },
+  {
+    title: 'Activity heatmap',
+    body:  'The grid on the Today page covers your current billing week. One row per calendar day, one cell per two hours, twelve cells a day.\n\nIt spans eight rows, not seven: a week running from Sunday 18:00 to Sunday 17:59 touches eight calendar dates, so the first and last rows are deliberately partial. Cells outside the window are drawn as empty outlines — that is what makes the boundary of your cycle visible.\n\nColour is pace, not volume. A 5-hour window holds two and a half 2-hour slots, so spending the whole window budget evenly means 40% of it per slot — the pace at which you arrive exactly at the wall as the window closes. Red marks that pace or faster; the bands below it are a quarter, a half and up to it. Shading within a band shows where inside it a cell sits.\n\nThree kinds of nothing are kept apart: outside the window (outline only), not yet reached (faint), and genuinely no activity (filled). Only the last one says anything about how your week went.\n\nBeside the grid, Active days counts the days of this billing week with any activity.',
+  },
+  {
+    title: 'Exporting your data',
+    body:  'Three CSV files: the project overview, the day-by-vault matrix, and the key figures. Two ways to get them, and they land in different places.\n\nCSV button in the sidebar header — the plugin writes the files into your vault, into the folder set under Settings → CSV export folder. The menu names that folder before you click. The same exports are in the command palette under "Export".\n\nCSV Export menu in the dashboard — the dashboard is a browser page, so it hands the file to your browser and the browser decides where it goes, usually your Downloads folder. A web page cannot choose a target folder; that is a browser rule, not a missing feature.\n\nBoth routes produce raw numbers and ISO dates, ready to calculate with. Everything is generated locally — no upload, no network, same as the rest of the plugin.',
+  },
+  {
+    title: 'Weekly reset',
+    body:  'The weekly limit resets at a fixed weekday and hour that differs per account. Everything week-shaped depends on it: the week ring, the forecast, the heatmap and the estimate itself.\n\nYou normally do not have to set this. When you hit a weekly limit, Claude writes the next reset time into the message, and the plugin reads it from there — Settings then shows a green check and the date of the hit it was taken from. Until that has happened at least once, it assumes Sunday 18:00 and says so.\n\nYou can set it by hand under Settings → Weekly reset. A manual setting wins: automatic detection will not overwrite it, it only confirms it. Worth re-checking after a daylight-saving change if your reset appears to have moved by an hour.',
   },
   {
     title: 'The three time views',
-    body:  'Three independent cuts through the same data — they do not nest automatically.\n\nLast 5 Hour Session — rolling window matching Claude\'s rate-limit period. Counts toward your usage limit.\n\nThis Session — all entries with the current session ID, regardless of calendar date. A Claude Code session can span multiple days. If you started a session yesterday and are still in it today, This Session will show more tokens than Today. That is expected — the session accumulates across calendar boundaries.\n\nToday — calendar day since midnight, regardless of which session the tokens came from.\n\nThe sub-label under each title shows its exact scope at a glance. Full explanation at langeatn.de/media/token-usage/',
+    body:  'Three independent cuts through the same data — they do not nest automatically.\n\nLast 5 Hour Session — the anchored window described above. Counts toward your usage limit.\n\nThis Session — all entries with the current session ID, regardless of calendar date. A Claude Code session can span multiple days. If you started a session yesterday and are still in it today, This Session will show more tokens than Today. That is expected — the session accumulates across calendar boundaries.\n\nToday — calendar day since midnight, regardless of which session the tokens came from.\n\nThe sub-label under each title shows its exact scope at a glance. Full explanation at langeatn.de/media/token-usage/',
   },
   {
     title: 'Rate limit estimates',
-    body:  'Anthropic doesn\'t publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits (shown in the dashboard\'s Limit Hero banner and the sidebar\'s Today & This Week cards).\n\nThe estimate isn\'t static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.',
+    body:  'Anthropic doesn\'t publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits (shown in the dashboard\'s budget banner and in the sidebar under Right Now, where the line beneath the three rings names the estimate and how many observed hits it rests on).\n\nBeneath it you also see a usual band, the middle half of your hits. The same limit is rarely reached at exactly the same total, because other Claude use that Token Usage cannot see (such as claude.ai in the browser) draws on the same limit, so one number alone would look more precise than it is.\n\nThe estimate isn\'t static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.',
   },
   {
-    title: 'NextGen Sidebar',
-    body:  'The sidebar has two layouts, switchable anytime in Settings → Sidebar appearance. Classic is the original single-page view and stays the default. NextGen switches to an icon rail with dedicated Today, Overview, and Settings pages, replaces the daily bar chart with a 7-day activity heatmap, and shows the 7-day and N-day summaries as colored KPI tiles with trend sparklines.\n\nIn NextGen, each of Today\'s four token rows also gets a compact verdict marker — a green dot when close to your own recent average, an amber arrow when running noticeably higher. The comparison window follows your Claude data retention setting, not a fixed number of days.\n\nSwitching between Classic and NextGen is fully reversible and does not affect any underlying data.',
+    title: 'The sidebar',
+    body:  'An icon rail on the left switches between four pages.\n\nToday — three rings (5h window, today, this week), the activity heatmap for the current billing week, your last action, and the token breakdown. Everything here is from today or the current week; anything covering a longer span lives elsewhere by design.\n\nCalendar — the last two months as month grids.\n\nAnalytics — the 7-day and N-day summaries as colored KPI tiles with trend sparklines, plus the model distribution.\n\nSettings — the same settings as the Obsidian settings tab, without leaving the sidebar.\n\nIn the header: Dashboard and Report generate files, CSV exports into your vault, and the arrow forces an immediate refresh.\n\nEach of Today\'s four token rows carries a compact verdict marker — a green dot when close to your own recent average, an amber arrow when running noticeably higher. The comparison window follows your Claude data retention setting, not a fixed number of days.',
   },
   {
     title: 'Activity calendar',
-    body:  'In the NextGen sidebar a month calendar sits at the bottom of every page. Each past day carries a colored dot sized against your own recent daily average: green below average, amber around it, red for a spike (2x or more). Days with no activity have no dot. Use the arrows to move back through your history as far as the archive reaches; the calendar never goes into the future and is display only. Turn it off under Settings → Activity calendar if you prefer a shorter sidebar.',
+    body:  'The Calendar page in the icon rail shows the last two months side by side. Two rather than one, because at the start of a month a single grid would show only a handful of usable days and hide exactly the run-up you are looking for. The arrows move the pair further back, as far as the archive reaches; the calendar never goes into the future.\n\nEach past day carries a colored dot sized against your own recent daily average: green below average, amber around it, red for a spike (2x or more). Days with no activity have no dot. Click any day to add a private note — it is stored in the plugin settings, never in your session data.',
   },
   {
     title: 'Models',
@@ -176,7 +232,7 @@ const HELP_SECTIONS = [
   },
   {
     title: 'Cost overview (approximate, USD)',
-    body:  'Input:        ~$3 / 1M tokens (Sonnet)\nOutput:       ~$15 / 1M tokens\nCache Write:  ~$3.75 / 1M tokens (+25%)\nCache Read:   ~$0.30 / 1M tokens (−90%)\n\nActual pricing depends on your plan and model. These figures illustrate why a high Reuse Factor reduces costs significantly.',
+    body:  'Input:        ~$3 / 1M tokens (Sonnet)\nOutput:       ~$15 / 1M tokens\nCache Write:  ~$3.75 / 1M tokens (+25%)\nCache Read:   ~$0.30 / 1M tokens (−90%)\n\nActual pricing depends on your plan and model. These figures illustrate why a high Reuse Factor reduces costs significantly.\n\nNote that cost and limits are two different things. Cache tokens cost money but do not move you toward the 5-hour or weekly limit — see "What counts toward a limit".',
   },
 ];
 
@@ -209,15 +265,18 @@ const STRINGS = {
     glossaryTitle:    'Glossary & Concepts',
     glossarySub:      'What every value means and how they relate',
     helpLink:         '↗ Full documentation on langeatn.de',
-    heatmapTitle:     'Last 7 Days',
+    heatmapTitle:     'Activity Heatmap',
+    heatmapCycle:     (range) => `Your billing week · ${range}`,
+    timelineSub:      'One cell = 2 hours. Red is the pace that would empty a 5-hour window exactly as it closes.',
+    heatLegendVhigh:  'Very high',
     heatLegendHigh:   'High',
     heatLegendMedium: 'Medium',
     heatLegendLow:    'Low',
     heatLegendEmpty:  'No activity',
     models:           'Models (last 7 days)',
-    last5h:           'Last 5 Hour Session',
+    last5h:           'Current 5h Window',
     waiting:          'Waiting for next request...',
-    rollingWindow:    'Rolling window · counts toward rate limit',
+    anchoredWindow:   'Anchored window · counts toward rate limit',
     backBtn:          '← Back',
     spikeAvg:         (r) => `↑ ${r}× avg`,
     windowCleared:    'Window cleared · full 5h available',
@@ -244,12 +303,23 @@ const STRINGS = {
     settingDashDesc:  'Vault-relative path — the file lives inside your vault folder, regenerated on every click and then opened in your default browser. Use the button to open its location.',
     settingArchive:        'Archive folder in vault',
     settingArchiveDesc:    'Vault-relative folder — lives inside your vault folder for daily usage summaries, one small Markdown file per day (aggregates only, never raw session content). Lets you keep long-term trends even after Claude Code deletes the original session files. Use the button to open its location.',
+    activeDaysTitle:  'Active days',
+    activeDaysSub:    'this billing week',
+    csvBtnTitle:      'Export CSV files into your vault',
+    csvMenuTarget:    (f) => `Writes into: ${f}`,
+    csvMenuAll:       'All three files',
+    csvMenuProjects:  'Projects overview',
+    csvMenuDaily:     'Daily detail',
+    csvMenuKpis:      'Key figures',
+    settingCsv:       'CSV export folder in vault',
+    settingCsvDesc:   'Vault-relative folder for CSV exports. Run one of the "Export … CSV" commands from the command palette and the files land here. The Dashboard also offers the same exports, but those are browser downloads and go wherever your browser puts them — a web page cannot choose a folder.',
+    csvNoData:        'No data to export yet — open the Token Usage sidebar first.',
+    csvFolderFailed:  (f) => `Could not create the export folder: ${f}`,
+    csvWritten:       (n, f) => `${n} CSV file(s) written to ${f}`,
     settingArchiveEnabled:     'Enable daily archive',
     settingArchiveEnabledDesc: 'Writes a daily summary file automatically. Turn off if you don\'t want the plugin creating files in your vault.',
     settingReportPeriod:     'Report period',
     settingReportPeriodDesc: 'How far back the dashboard and report look. Beyond your Claude data retention, this is filled in from the daily archive — recent days stay live, older ones come from Token Usage Archive/.',
-    settingSidebarMode:      'Sidebar appearance',
-    settingSidebarModeDesc: 'Classic keeps the current sidebar exactly as-is. NextGen switches to an icon rail with dedicated Today/Overview/Settings pages, a 7-day activity heatmap, and colored KPI tiles with trend sparklines — plus a compact verdict marker next to each value in Today, based on your own recent average (follows your Claude data retention setting).',
     verdictHigh:      (d) => `Higher than your ${d}-day average for this type — worth a glance.`,
     verdictNormal:    (d) => `Close to your ${d}-day average for this type.`,
     tileTotal:        'Total',
@@ -257,7 +327,15 @@ const STRINGS = {
     tileActiveDays:   'Active days',
     tileAvgPerDay:    'Avg / active day',
     railOverview:     'Overview',
+    railAnalytics:    'Analytics',
+    railCalendar:     'Calendar',
     railSettings:     'Settings',
+    settingReset:     'Weekly reset',
+    settingResetDesc: 'One-off setup: run /usage in Claude Code, read when your weekly limit resets, and set it here. Anthropic assigns this per account — it is not the same for everyone. Until you do, the plugin assumes Sunday 18:00 and every week-based figure may be off.',
+    settingResetAuto: (d) => `Detected automatically from your weekly-limit hit on ${d} — no setup needed. Change it below only if it looks wrong.`,
+    settingResetDone: (d) => `Set manually on ${d}. Update it if your reset ever moves (for example after a daylight-saving change).`,
+    calSun: 'Sunday', calMon: 'Monday', calTue: 'Tuesday', calWed: 'Wednesday',
+    calThu: 'Thursday', calFri: 'Friday', calSat: 'Saturday',
     settingSource:    (p) => `Source: ${p} — no API key required.`,
     settingCleanup:     'Claude data retention (days)',
     settingCleanupDesc: 'Controls how long Claude Code keeps session files. Default: 30 days. For long-term controlling (cost trends, contract comparisons) recommended: 90–180 days. Writes directly to Claude Code\'s settings.json; a backup (.bak) is created automatically before each change.',
@@ -269,8 +347,6 @@ const STRINGS = {
     archiveBackfilled: (n) => `Token Usage archived ${n} days of history.`,
     calPrev:          'Previous month',
     calNext:          'Next month',
-    settingCalendar:     'Activity calendar (NextGen)',
-    settingCalendarDesc: 'Shows a month calendar at the bottom of the NextGen sidebar with one colored dot per day, sized against your recent daily average (green below, amber around, red well above). The Classic sidebar is unaffected.',
     calNoteTitle:     (d) => `Note — ${d}`,
     calNotePlaceholder: 'Add a note about this day\'s usage (optional)...',
     calNoteSave:      'Save',
@@ -278,13 +354,16 @@ const STRINGS = {
     calNoteCancel:    'Cancel',
     calNoteAdd:       'Click to add a note',
     calNoteEdit:      'Click to edit note',
-    limitPulseTitle:    'Today & This Week',
+    limitPulseTitle:    'Right Now',
+    limitPulse5h:       '5h Window',
+    limitPulseOf5h:     (p) => `${p}% of est. 5h limit`,
+    limitPulseBasis:    (n) => `5h limit estimated at {v} — median of ${n} observed limit hits in your own data.`,
+    limitPulseBand:      (lo, hi) => `Usually between ${lo} and ${hi} (middle half of hits).`,
     limitPulseToday:    'Today',
     limitPulseWeek:     'This Week',
-    limitPulseOfDaily:  (p) => `${p}% of fair daily share`,
+    limitPulseOfDaily:  (p) => `${p}% of your usual day`,
     limitPulseOfWeekly: (p) => `${p}% of est. weekly limit`,
     limitPulseNoWeekly: 'Weekly limit not yet estimated — needs one observed weekly-limit hit.',
-    limitPulseFooter:   'Empirical, not published by Anthropic — gets more precise the more you use Claude Code.',
     helpSections:     HELP_SECTIONS,
   },
   de: {
@@ -306,15 +385,18 @@ const STRINGS = {
     glossaryTitle:    'Glossar & Konzepte',
     glossarySub:      'Was jeder Wert bedeutet und wie sie zusammenhängen',
     helpLink:         '↗ Vollständige Dokumentation auf langeatn.de',
-    heatmapTitle:     'Letzte 7 Tage',
+    heatmapTitle:     'Aktivitäts-Heatmap',
+    heatmapCycle:     (range) => `Dein Abrechnungszyklus · ${range}`,
+    timelineSub:      'Eine Zelle = 2 Stunden. Rot ist das Tempo, das ein 5-Stunden-Fenster genau zum Ablauf leer macht.',
+    heatLegendVhigh:  'Sehr hoch',
     heatLegendHigh:   'Hoch',
     heatLegendMedium: 'Mittel',
     heatLegendLow:    'Niedrig',
     heatLegendEmpty:  'Keine Aktivität',
     models:           'Modelle (in den letzten 7 Tagen)',
-    last5h:           'Letzte 5-Stunden-Session',
+    last5h:           'Aktuelles 5-Stunden-Fenster',
     waiting:          'Warte auf nächste Anfrage...',
-    rollingWindow:    'Rollierendes Zeitfenster · zählt zum Rate-Limit',
+    anchoredWindow:   'Verankertes Fenster · zählt zum Rate-Limit',
     backBtn:          '← Zurück',
     spikeAvg:         (r) => `↑ ${r}× Ø`,
     noData:           'Token Usage: Noch keine Daten.',
@@ -341,12 +423,23 @@ const STRINGS = {
     settingDashDesc:  'Vault-relativer Pfad — die Datei liegt in deinem Vault-Ordner, wird bei jeder Ausführung neu generiert und im Standardbrowser geöffnet. Über den Button öffnest du den Ablageort.',
     settingArchive:        'Archiv-Ordner im Vault',
     settingArchiveDesc:    'Vault-relativer Ordner — liegt in deinem Vault-Ordner, für tägliche Nutzungs-Zusammenfassungen, eine kleine Markdown-Datei pro Tag (nur Aggregate, nie Rohinhalte der Sessions). Ermöglicht Langzeit-Trends, auch nachdem Claude Code die ursprünglichen Session-Dateien gelöscht hat. Über den Button öffnest du den Ablageort.',
+    activeDaysTitle:  'Aktive Tage',
+    activeDaysSub:    'in dieser Abrechnungswoche',
+    csvBtnTitle:      'CSV-Dateien in deinen Vault exportieren',
+    csvMenuTarget:    (f) => `Schreibt nach: ${f}`,
+    csvMenuAll:       'Alle drei Dateien',
+    csvMenuProjects:  'Projektübersicht',
+    csvMenuDaily:     'Tagesdetail',
+    csvMenuKpis:      'Kennzahlen',
+    settingCsv:       'CSV-Export-Ordner im Vault',
+    settingCsvDesc:   'Vault-relativer Ordner für CSV-Exporte. Einen der "Export … CSV"-Befehle aus der Befehlspalette ausführen, dann landen die Dateien hier. Das Dashboard bietet dieselben Exporte ebenfalls an, das sind aber Browser-Downloads und landen dort, wo dein Browser sie ablegt — eine Webseite kann keinen Ordner wählen.',
+    csvNoData:        'Noch keine Daten zum Exportieren — öffne zuerst die Token-Usage-Seitenleiste.',
+    csvFolderFailed:  (f) => `Export-Ordner konnte nicht angelegt werden: ${f}`,
+    csvWritten:       (n, f) => `${n} CSV-Datei(en) geschrieben nach ${f}`,
     settingArchiveEnabled:     'Tägliches Archiv aktivieren',
     settingArchiveEnabledDesc: 'Schreibt automatisch eine tägliche Zusammenfassungsdatei. Ausschalten, wenn das Plugin keine Dateien im Vault anlegen soll.',
     settingReportPeriod:     'Berichtszeitraum',
     settingReportPeriodDesc: 'Wie weit Dashboard und Report zurückblicken. Über die eingestellte Claude-Datenaufbewahrung hinaus wird aus dem täglichen Archiv aufgefüllt — aktuelle Tage bleiben live, ältere kommen aus Token Usage Archive/.',
-    settingSidebarMode:      'Sidebar-Darstellung',
-    settingSidebarModeDesc: 'Classic zeigt die Sidebar exakt wie bisher. NextGen wechselt zu einer Icon-Rail mit eigenen Today-/Overview-/Settings-Seiten, einer 7-Tage-Aktivitäts-Heatmap und farbigen KPI-Kacheln mit Trend-Sparklines — dazu eine kompakte Verdict-Markierung bei jedem Wert im Heute-Bereich, basierend auf deinem eigenen aktuellen Durchschnitt (richtet sich nach deiner eingestellten Claude-Datenaufbewahrung).',
     verdictHigh:      (d) => `Höher als dein ${d}-Tage-Durchschnitt für diesen Typ — einen Blick wert.`,
     verdictNormal:    (d) => `Nahe an deinem ${d}-Tage-Durchschnitt für diesen Typ.`,
     tileTotal:        'Gesamt',
@@ -354,7 +447,15 @@ const STRINGS = {
     tileActiveDays:   'Aktive Tage',
     tileAvgPerDay:    'Ø / aktivem Tag',
     railOverview:     'Übersicht',
+    railAnalytics:    'Auswertung',
+    railCalendar:     'Kalender',
     railSettings:     'Einstellungen',
+    settingReset:     'Wöchentlicher Reset',
+    settingResetDesc: 'Einmalige Einrichtung: Führe /usage in Claude Code aus, lies ab, wann dein Wochenlimit zurückgesetzt wird, und trag es hier ein. Anthropic legt das pro Konto fest — es ist nicht für alle gleich. Bis dahin nimmt das Plugin Sonntag 18:00 an, und jede wochenbezogene Zahl kann daneben liegen.',
+    settingResetAuto: (d) => `Automatisch erkannt aus deinem Wochenlimit-Treffer vom ${d} — keine Einrichtung nötig. Nur ändern, falls es falsch aussieht.`,
+    settingResetDone: (d) => `Am ${d} manuell gesetzt. Anpassen, falls sich dein Reset verschiebt (etwa nach einer Zeitumstellung).`,
+    calSun: 'Sonntag', calMon: 'Montag', calTue: 'Dienstag', calWed: 'Mittwoch',
+    calThu: 'Donnerstag', calFri: 'Freitag', calSat: 'Samstag',
     settingSource:    (p) => `Quelle: ${p} — kein API-Schlüssel erforderlich.`,
     settingCleanup:     'Claude-Datenaufbewahrung (Tage)',
     settingCleanupDesc: 'Steuert wie lange Claude Code Session-Dateien behält. Standard: 30 Tage. Für Langzeit-Controlling (Kostentrends, Vertragsvergleiche) empfohlen: 90–180 Tage. Schreibt direkt in Claude Codes settings.json; vor jeder Änderung wird automatisch ein Backup (.bak) angelegt.',
@@ -366,8 +467,6 @@ const STRINGS = {
     archiveBackfilled: (n) => `Token Usage hat ${n} Tage Historie archiviert.`,
     calPrev:          'Vorheriger Monat',
     calNext:          'Nächster Monat',
-    settingCalendar:     'Aktivitätskalender (NextGen)',
-    settingCalendarDesc: 'Zeigt unten in der NextGen-Sidebar einen Monatskalender mit einem farbigen Punkt pro Tag, gewichtet gegen deinen jüngsten Tagesdurchschnitt (grün darunter, gelb um den Schnitt, rot deutlich darüber). Die Classic-Sidebar bleibt unberührt.',
     calNoteTitle:     (d) => `Notiz — ${d}`,
     calNotePlaceholder: 'Notiz zum Tagesverbrauch hinzufügen (optional)...',
     calNoteSave:      'Speichern',
@@ -375,13 +474,16 @@ const STRINGS = {
     calNoteCancel:    'Abbrechen',
     calNoteAdd:       'Klicken, um eine Notiz hinzuzufügen',
     calNoteEdit:      'Klicken, um die Notiz zu bearbeiten',
-    limitPulseTitle:    'Heute & diese Woche',
+    limitPulseTitle:    'Aktueller Stand',
+    limitPulse5h:       '5h-Fenster',
+    limitPulseOf5h:     (p) => `${p}% des geschätzten 5h-Limits`,
+    limitPulseBasis:    (n) => `5h-Limit geschätzt auf {v} — Median aus ${n} beobachteten Limit-Treffern in deinen eigenen Daten.`,
+    limitPulseBand:      (lo, hi) => `Meist zwischen ${lo} und ${hi} (mittlere Hälfte der Treffer).`,
     limitPulseToday:    'Heute',
     limitPulseWeek:     'Diese Woche',
-    limitPulseOfDaily:  (p) => `${p}% des fairen Tagesanteils`,
+    limitPulseOfDaily:  (p) => `${p}% deines üblichen Tages`,
     limitPulseOfWeekly: (p) => `${p}% des geschätzten Wochenlimits`,
     limitPulseNoWeekly: 'Wochenlimit noch nicht geschätzt — braucht mindestens einen beobachteten Weekly-Limit-Hit.',
-    limitPulseFooter:   'Empirisch, nicht von Anthropic veröffentlicht — wird präziser, je mehr du Claude Code nutzt.',
     helpSections: [
       {
         title: 'Token',
@@ -405,23 +507,39 @@ const STRINGS = {
       },
       {
         title: '5-Stunden-Fenster',
-        body:  'Ein rollierendes 5-Stunden-Fenster passend zu Claudes Rate-Limit-Zeitraum. "Claude 5h-Fenster wird zurückgesetzt in: ~Xh Ym" zählt bis zum nächsten Reset herunter.\n~ = Näherungswert: Session-Dateien werden nach jeder abgeschlossenen Antwort geschrieben, nicht beim Start. Kann 10–25 Min. verzögert sein. Den genauen Zeitpunkt findest du in Claude Code oder auf claude.ai.',
+        body:  'Ein verankertes 5-Stunden-Fenster passend zu Claudes Rate-Limit-Zeitraum. Es öffnet mit deiner ersten Nachricht und läuft dann exakt fünf Stunden. Ein neues Fenster beginnt erst, wenn diese Zeitspanne vollständig abgelaufen ist — die Fenster sind in festen Fünf-Stunden-Blöcken verkettet; eine Pause mittendrin startet kein neues, und durchgängiges Arbeiten hält eines nicht über seine fünf Stunden hinaus offen. Es ist kein gleitendes "die letzten fünf Stunden". Das ist unabhängig vom Wochen-Reset: Das Wochenlimit setzt sich nach seinem eigenen Zeitplan zurück und erzwingt dabei kein neues 5-Stunden-Fenster.\n"Claude 5h-Fenster wird zurückgesetzt in: ~Xh Ym" zählt bis zum Ende des offenen Fensters herunter.\n~ = Näherungswert: Session-Dateien werden nach jeder abgeschlossenen Antwort geschrieben, nicht beim Start. Kann 10–25 Min. verzögert sein. Den genauen Zeitpunkt findest du in Claude Code oder auf claude.ai.',
+      },
+      {
+        title: 'Was auf ein Limit einzahlt',
+        body:  'Anthropic setzt zwei Limits durch und sonst keins: das 5-Stunden-Fenster oben und ein Wochenlimit, das an einem festen Wochentag zu einer festen Uhrzeit zurückgesetzt wird. Ein Tageslimit gibt es nicht — die Kachel "Heute" ist deshalb kein Kontingent, sondern ein Vergleich mit deinem eigenen Durchschnitt.\n\nEs zählen ausschließlich Input- und Output-Tokens. Cache Read und Cache Write sind echtes Volumen und stehen vollständig in ihren eigenen Zeilen, bringen dich aber keinem der beiden Limits näher. Das ist gemessen, nicht angenommen: Für jeden beobachteten Limit-Treffer summiert das Plugin das Fenster auf mehrere Arten, und Input + Output ist im Moment des Abbruchs mit Abstand der konsistenteste Wert.\n\nKeines der beiden Limits ist veröffentlicht. Beide Schätzungen stammen aus deiner eigenen Historie — deshalb kann das Plugin sie erst zeigen, wenn es dich mindestens einmal in ein Limit laufen gesehen hat.',
+      },
+      {
+        title: 'Aktivitäts-Heatmap',
+        body:  'Das Raster auf der Today-Seite zeigt deine laufende Abrechnungswoche. Eine Zeile je Kalendertag, eine Zelle je zwei Stunden, zwölf Zellen pro Tag.\n\nEs hat acht Zeilen, nicht sieben: Eine Woche von Sonntag 18:00 bis Sonntag 17:59 berührt acht Kalendertage, die erste und die letzte Zeile sind deshalb bewusst Teiltage. Zellen außerhalb des Fensters sind nur als leere Rahmen gezeichnet — genau das macht die Grenze deines Zyklus sichtbar.\n\nDie Farbe zeigt das Tempo, nicht die Menge. Ein 5-Stunden-Fenster fasst zweieinhalb 2-Stunden-Abschnitte; das Budget gleichmäßig verbraucht sind also 40 % davon je Abschnitt — das Tempo, bei dem du exakt mit Ablauf des Fensters an die Wand kommst. Rot markiert dieses Tempo oder schneller, die Stufen darunter sind ein Viertel, die Hälfte und bis dahin. Die Tonabstufung innerhalb einer Stufe zeigt, wo darin ein Wert sitzt.\n\nDrei Arten von Nichts bleiben getrennt: außerhalb des Fensters (nur Rahmen), noch nicht erreicht (blass) und wirklich keine Aktivität (gefüllt). Nur das Letzte sagt etwas darüber aus, wie deine Woche lief.\n\nNeben dem Raster zählt "Aktive Tage" die Tage dieser Abrechnungswoche mit Aktivität.',
+      },
+      {
+        title: 'Daten exportieren',
+        body:  'Drei CSV-Dateien: die Projektübersicht, die Tag-mal-Vault-Matrix und die Kennzahlen. Zwei Wege dorthin, und sie landen an verschiedenen Orten.\n\nCSV-Button im Kopf der Seitenleiste — das Plugin schreibt die Dateien in deinen Vault, in den Ordner aus Settings → CSV-Export-Ordner. Das Menü nennt diesen Ordner, bevor du klickst. Dieselben Exporte liegen in der Befehlspalette unter "Export".\n\nCSV-Export-Menü im Dashboard — das Dashboard ist eine Browser-Seite, übergibt die Datei also dem Browser, und der entscheidet über den Ablageort, üblicherweise dein Download-Ordner. Eine Webseite kann keinen Zielordner wählen; das ist eine Browser-Regel, keine fehlende Funktion.\n\nBeide Wege liefern rohe Zahlen und ISO-Datumsangaben, direkt weiterrechenbar. Alles entsteht lokal — kein Upload, kein Netzwerk, wie im ganzen Plugin.',
+      },
+      {
+        title: 'Wöchentlicher Reset',
+        body:  'Das Wochenlimit wird an einem festen Wochentag zu einer festen Uhrzeit zurückgesetzt, und zwar je Konto unterschiedlich. Alles Wochenbezogene hängt daran: der Wochen-Ring, die Prognose, die Heatmap und die Schätzung selbst.\n\nNormalerweise musst du hier nichts einstellen. Wenn du in ein Wochenlimit läufst, schreibt Claude den nächsten Reset-Zeitpunkt in die Meldung, und das Plugin liest ihn von dort — die Einstellungen zeigen dann einen grünen Haken und das Datum des Treffers, aus dem der Wert stammt. Solange das noch nie passiert ist, nimmt es Sonntag 18:00 an und sagt das auch.\n\nVon Hand geht es unter Settings → Wöchentlicher Reset. Eine manuelle Einstellung gewinnt: Die automatische Erkennung überschreibt sie nicht, sie bestätigt sie nur. Nach einer Zeitumstellung lohnt ein Blick, falls dein Reset um eine Stunde verschoben wirkt.',
       },
       {
         title: 'Die drei unterschiedlichen Zeitansichten in der Übersicht',
-        body:  'Es gibt drei unabhängige Ausschnitte aus denselben Daten — sie sind nicht automatisch ineinander verschachtelt.\n\nDie Letzte 5-Stunden-Session — rollierendes Fenster passend zu Claudes Rate-Limit-Zeitraum. Zählt zu deinem Nutzungslimit.\n\nDiese Session — alle Einträge mit der aktuellen Session-ID, unabhängig vom Kalenderdatum. Eine Claude Code Session kann mehrere Tage umfassen. Wenn du eine Session gestern begonnen hast und heute noch darin weiterarbeitest, zeigt "Diese Session" mehr Tokens als "Heute". Das ist so gewollt und designt — die Session akkumuliert über Kalendergrenzen hinweg.\n\nHeute — Kalendertag seit Mitternacht, unabhängig davon, aus welcher Session die Token stammen.\n\nDie Beschreibung unter jedem Titel zeigt den genauen Geltungsbereich auf einen Blick. Du findest eine vollständige Erklärung auf langeatn.de/media/token-usage/',
+        body:  'Es gibt drei unabhängige Ausschnitte aus denselben Daten — sie sind nicht automatisch ineinander verschachtelt.\n\nDie Letzte 5-Stunden-Session — das verankerte Fenster von oben. Zählt zu deinem Nutzungslimit.\n\nDiese Session — alle Einträge mit der aktuellen Session-ID, unabhängig vom Kalenderdatum. Eine Claude Code Session kann mehrere Tage umfassen. Wenn du eine Session gestern begonnen hast und heute noch darin weiterarbeitest, zeigt "Diese Session" mehr Tokens als "Heute". Das ist so gewollt und designt — die Session akkumuliert über Kalendergrenzen hinweg.\n\nHeute — Kalendertag seit Mitternacht, unabhängig davon, aus welcher Session die Token stammen.\n\nDie Beschreibung unter jedem Titel zeigt den genauen Geltungsbereich auf einen Blick. Du findest eine vollständige Erklärung auf langeatn.de/media/token-usage/',
       },
       {
         title: 'Empirische Limit-Schätzung',
-        body:  'Anthropic veröffentlicht das tatsächliche Token-Limit hinter einem Rate-Limit-Hit nicht — es existiert serverseitig und bleibt unsichtbar. Token Usage macht es stattdessen empirisch sichtbar: jeder erkannte Rate-Limit-Hit wird zu einem Datenpunkt, und genug Datenpunkte ergeben eine Schätzung deines eigenen Session- und Wochenlimits (zu sehen im Limit-Hero-Banner des Dashboards und in den Today & This Week-Karten der Seitenleiste).\n\nDie Schätzung ist nicht statisch — sie wird mit der Zeit ganz automatisch präziser, je länger du Claude Code nutzt. Jeder neue Rate-Limit-Hit verfeinert sie weiter, sodass die Zahl, die du heute siehst, verlässlicher ist als die aus deiner ersten Woche.',
+        body:  'Anthropic veröffentlicht das tatsächliche Token-Limit hinter einem Rate-Limit-Hit nicht — es existiert serverseitig und bleibt unsichtbar. Token Usage macht es stattdessen empirisch sichtbar: jeder erkannte Rate-Limit-Hit wird zu einem Datenpunkt, und genug Datenpunkte ergeben eine Schätzung deines eigenen Session- und Wochenlimits (zu sehen im Budget-Banner des Dashboards und in der Seitenleiste unter "Aktueller Stand", wo die Zeile unter den drei Ringen die Schätzung nennt und auf wie vielen beobachteten Treffern sie beruht).\n\nDarunter siehst du außerdem ein übliches Band, die mittlere Hälfte deiner Treffer. Dasselbe Limit wird selten bei exakt derselben Summe erreicht, weil auch anderes Claude-Nutzen, das Token Usage nicht sehen kann (etwa claude.ai im Browser), am selben Limit zehrt. Eine einzelne Zahl würde genauer wirken, als sie ist.\n\nDie Schätzung ist nicht statisch — sie wird mit der Zeit ganz automatisch präziser, je länger du Claude Code nutzt. Jeder neue Rate-Limit-Hit verfeinert sie weiter, sodass die Zahl, die du heute siehst, verlässlicher ist als die aus deiner ersten Woche.',
       },
       {
-        title: 'NextGen-Seitenleiste',
-        body:  'Die Seitenleiste hat zwei Darstellungen, jederzeit umschaltbar unter Settings → Sidebar appearance. Classic ist die ursprüngliche Einzelseiten-Ansicht und bleibt der Standard. NextGen wechselt zu einer Icon-Leiste mit eigenen Today-, Overview- und Settings-Seiten, ersetzt das tägliche Balkendiagramm durch eine 7-Tage-Aktivitäts-Heatmap und zeigt die 7-Tage- und N-Tage-Zusammenfassungen als farbige KPI-Kacheln mit Trend-Sparklines.\n\nIn NextGen bekommt außerdem jede der vier Token-Zeilen im Heute-Bereich eine kompakte Verdict-Markierung — ein grüner Punkt, wenn der Wert nahe an deinem eigenen aktuellen Durchschnitt liegt, ein gelber Pfeil, wenn er deutlich darüber liegt. Das Vergleichsfenster richtet sich nach deiner eingestellten Claude-Datenaufbewahrung, nicht nach einer festen Anzahl Tage.\n\nDer Wechsel zwischen Classic und NextGen ist jederzeit rückgängig zu machen und beeinflusst keine zugrunde liegenden Daten.',
+        title: 'Die Seitenleiste',
+        body:  'Eine Icon-Leiste links wechselt zwischen vier Seiten.\n\nToday — drei Ringe (5h-Fenster, Heute, diese Woche), die Aktivitäts-Heatmap der laufenden Abrechnungswoche, deine letzte Aktion und die Token-Aufschlüsselung. Alles hier stammt von heute oder aus der laufenden Woche; alles mit längerem Zeitraum liegt bewusst woanders.\n\nKalender — die letzten zwei Monate als Monatsraster.\n\nAnalytics — die 7-Tage- und N-Tage-Zusammenfassungen als farbige KPI-Kacheln mit Trend-Sparklines, dazu die Modellverteilung.\n\nSettings — dieselben Einstellungen wie im Obsidian-Einstellungstab, ohne die Seitenleiste zu verlassen.\n\nIm Kopfbereich: Dashboard und Report erzeugen Dateien, CSV exportiert in deinen Vault, der Pfeil aktualisiert sofort.\n\nJede der vier Token-Zeilen im Heute-Bereich trägt eine kompakte Verdict-Markierung — ein grüner Punkt, wenn der Wert nahe an deinem eigenen aktuellen Durchschnitt liegt, ein gelber Pfeil, wenn er deutlich darüber liegt. Das Vergleichsfenster richtet sich nach deiner eingestellten Claude-Datenaufbewahrung, nicht nach einer festen Anzahl Tage.',
       },
       {
         title: 'Aktivitätskalender',
-        body:  'In der NextGen-Seitenleiste sitzt unten auf jeder Seite ein Monatskalender. Jeder vergangene Tag trägt einen farbigen Punkt, gewichtet gegen deinen eigenen jüngsten Tagesdurchschnitt: grün darunter, gelb um den Schnitt herum, rot bei einem Ausschlag (2x oder mehr). Tage ohne Aktivität haben keinen Punkt. Mit den Pfeilen gehst du so weit zurück, wie das Archiv reicht; in die Zukunft geht der Kalender nie, und er ist reine Anzeige. Unter Settings → Aktivitätskalender lässt er sich abschalten, wenn du eine kürzere Seitenleiste möchtest.',
+        body:  'Die Kalender-Seite in der Icon-Leiste zeigt die letzten zwei Monate untereinander. Zwei statt einem, weil ein einzelnes Raster am Monatsanfang nur eine Handvoll brauchbarer Tage zeigt und genau den Anlauf verbirgt, den man dort sucht. Die Pfeile verschieben das Paar weiter zurück, so weit das Archiv reicht; in die Zukunft geht der Kalender nie.\n\nJeder vergangene Tag trägt einen farbigen Punkt, gewichtet gegen deinen eigenen jüngsten Tagesdurchschnitt: grün darunter, gelb um den Schnitt herum, rot bei einem Ausschlag (2x oder mehr). Tage ohne Aktivität haben keinen Punkt. Ein Klick auf einen Tag legt eine private Notiz an — sie liegt in den Plugin-Einstellungen, nie in deinen Session-Daten.',
       },
       {
         title: 'Modelle',
@@ -449,7 +567,7 @@ const STRINGS = {
       },
       {
         title: 'Kostenübersicht (ungefähr, USD)',
-        body:  'Input:        ~3 $ / 1M Token (Sonnet)\nOutput:       ~15 $ / 1M Token\nCache Write:  ~3,75 $ / 1M Token (+25 %)\nCache Read:   ~0,30 $ / 1M Token (−90 %)\n\nDie tatsächlichen Preise hängen von deinem Plan und Modell ab. Diese Werte verdeutlichen, warum ein hoher Wiederverwendungsfaktor die Kosten erheblich senkt.',
+        body:  'Input:        ~3 $ / 1M Token (Sonnet)\nOutput:       ~15 $ / 1M Token\nCache Write:  ~3,75 $ / 1M Token (+25 %)\nCache Read:   ~0,30 $ / 1M Token (−90 %)\n\nDie tatsächlichen Preise hängen von deinem Plan und Modell ab. Diese Werte verdeutlichen, warum ein hoher Wiederverwendungsfaktor die Kosten erheblich senkt.\n\nKosten und Limits sind zweierlei: Cache-Tokens kosten Geld, bringen dich aber dem 5-Stunden- oder Wochenlimit nicht näher — siehe "Was auf ein Limit einzahlt".',
       },
     ],
   },
@@ -472,15 +590,18 @@ const STRINGS = {
     glossaryTitle:    'Glossaire et concepts',
     glossarySub:      'Ce que signifie chaque valeur et comment elles sont liées',
     helpLink:         '↗ Documentation complète sur langeatn.de',
-    heatmapTitle:     '7 derniers jours',
+    heatmapTitle:     "Carte d'activité",
+    heatmapCycle:     (range) => `Votre cycle de facturation · ${range}`,
+    timelineSub:      'Une case = 2 heures. Le rouge correspond au rythme qui épuise une fenêtre de 5 heures juste à sa fermeture.',
+    heatLegendVhigh:  'Très élevé',
     heatLegendHigh:   'Élevé',
     heatLegendMedium: 'Moyen',
     heatLegendLow:    'Faible',
     heatLegendEmpty:  'Aucune activité',
     models:           'Modèles (7 derniers jours)',
-    last5h:           'Dernière session de 5 heures',
+    last5h:           'Fenêtre de 5 h en cours',
     waiting:          'En attente de la prochaine requête...',
-    rollingWindow:    'Fenêtre glissante · prise en compte dans la limite de débit',
+    anchoredWindow:   'Fenêtre ancrée · prise en compte dans la limite de débit',
     backBtn:          '← Retour',
     spikeAvg:         (r) => `↑ ${r}× moy.`,
     windowCleared:    'Fenêtre réinitialisée · 5 h entièrement disponibles',
@@ -507,12 +628,23 @@ const STRINGS = {
     settingDashDesc:  'Chemin relatif au vault — le fichier se trouve dans votre dossier de vault, régénéré à chaque clic puis ouvert dans votre navigateur par défaut. Utilisez le bouton pour ouvrir son emplacement.',
     settingArchive:        'Dossier d\'archive dans le vault',
     settingArchiveDesc:    'Dossier relatif au vault — se trouve dans votre dossier de vault, pour les résumés quotidiens d\'utilisation, un petit fichier Markdown par jour (agrégats uniquement, jamais le contenu brut des sessions). Permet de conserver les tendances à long terme même après la suppression des fichiers de session d\'origine par Claude Code. Utilisez le bouton pour ouvrir son emplacement.',
+    activeDaysTitle:  'Jours actifs',
+    activeDaysSub:    'cette semaine de facturation',
+    csvBtnTitle:      'Exporter les fichiers CSV dans votre vault',
+    csvMenuTarget:    (f) => `Écrit dans : ${f}`,
+    csvMenuAll:       'Les trois fichiers',
+    csvMenuProjects:  'Vue des projets',
+    csvMenuDaily:     'Détail quotidien',
+    csvMenuKpis:      'Indicateurs clés',
+    settingCsv:       'Dossier d\'export CSV dans le vault',
+    settingCsvDesc:   'Dossier relatif au vault pour les exports CSV. Lancez une des commandes « Export … CSV » depuis la palette de commandes et les fichiers arrivent ici. Le tableau de bord propose les mêmes exports, mais ce sont des téléchargements du navigateur : ils vont là où votre navigateur les place, une page web ne peut pas choisir un dossier.',
+    csvNoData:        'Aucune donnée à exporter pour le moment — ouvrez d\'abord la barre latérale Token Usage.',
+    csvFolderFailed:  (f) => `Impossible de créer le dossier d'export : ${f}`,
+    csvWritten:       (n, f) => `${n} fichier(s) CSV écrit(s) dans ${f}`,
     settingArchiveEnabled:     'Activer l\'archive quotidienne',
     settingArchiveEnabledDesc: 'Écrit automatiquement un fichier récapitulatif quotidien. Désactivez si vous ne souhaitez pas que le plugin crée des fichiers dans votre vault.',
     settingReportPeriod:     'Période du rapport',
     settingReportPeriodDesc: 'Jusqu\'où le tableau de bord et le rapport remontent. Au-delà de votre conservation des données Claude, la période est complétée depuis l\'archive quotidienne — les jours récents restent en direct, les plus anciens proviennent de Token Usage Archive/.',
-    settingSidebarMode:      'Apparence de la barre latérale',
-    settingSidebarModeDesc: 'Classic conserve la barre latérale actuelle telle quelle. NextGen passe à une barre d\'icônes avec des pages Today/Overview/Settings dédiées, une carte thermique d\'activité sur 7 jours, et des tuiles KPI colorées avec sparklines — plus un repère compact à côté de chaque valeur dans Today, basé sur votre moyenne récente (suit votre réglage de conservation des données Claude).',
     verdictHigh:      (d) => `Plus élevé que votre moyenne sur ${d} jours pour ce type — à surveiller.`,
     verdictNormal:    (d) => `Proche de votre moyenne sur ${d} jours pour ce type.`,
     tileTotal:        'Total',
@@ -520,7 +652,15 @@ const STRINGS = {
     tileActiveDays:   'Jours actifs',
     tileAvgPerDay:    'Moy. / jour actif',
     railOverview:     'Aperçu',
+    railAnalytics:    'Analyse',
+    railCalendar:     'Calendrier',
     railSettings:     'Paramètres',
+    settingReset:     'Réinitialisation hebdomadaire',
+    settingResetDesc: 'Configuration unique : lancez /usage dans Claude Code, relevez le moment où votre limite hebdomadaire est réinitialisée et indiquez-le ici. Anthropic le définit par compte — ce n\'est pas le même pour tout le monde. En attendant, le plugin suppose dimanche 18:00 et toute valeur hebdomadaire peut être fausse.',
+    settingResetAuto: (d) => `Détecté automatiquement à partir de votre dépassement hebdomadaire du ${d} — aucune configuration requise. À modifier seulement si cela semble incorrect.`,
+    settingResetDone: (d) => `Défini manuellement le ${d}. À mettre à jour si votre réinitialisation change (par exemple après un changement d\'heure).`,
+    calSun: 'Dimanche', calMon: 'Lundi', calTue: 'Mardi', calWed: 'Mercredi',
+    calThu: 'Jeudi', calFri: 'Vendredi', calSat: 'Samedi',
     settingSource:    (p) => `Source : ${p} — aucune clé API requise.`,
     settingCleanup:     'Conservation des données Claude (jours)',
     settingCleanupDesc: 'Détermine combien de temps Claude Code conserve les fichiers de session. Par défaut : 30 jours. Pour un suivi à long terme (tendances de coûts, comparaisons de contrats), recommandé : 90 à 180 jours. Écrit directement dans le fichier settings.json de Claude Code ; une sauvegarde (.bak) est créée automatiquement avant chaque modification.',
@@ -532,8 +672,6 @@ const STRINGS = {
     archiveBackfilled: (n) => `Token Usage a archivé ${n} jours d'historique.`,
     calPrev:          'Mois précédent',
     calNext:          'Mois suivant',
-    settingCalendar:     'Calendrier d\'activité (NextGen)',
-    settingCalendarDesc: 'Affiche en bas de la barre latérale NextGen un calendrier mensuel avec une pastille colorée par jour, pondérée par rapport à votre moyenne quotidienne récente (vert en dessous, ambre autour, rouge nettement au-dessus). La barre latérale Classic n\'est pas affectée.',
     calNoteTitle:     (d) => `Note — ${d}`,
     calNotePlaceholder: 'Ajouter une note sur la consommation de ce jour (facultatif)...',
     calNoteSave:      'Enregistrer',
@@ -541,13 +679,16 @@ const STRINGS = {
     calNoteCancel:    'Annuler',
     calNoteAdd:       'Cliquez pour ajouter une note',
     calNoteEdit:      'Cliquez pour modifier la note',
-    limitPulseTitle:    'Aujourd\'hui et cette semaine',
+    limitPulseTitle:    'Situation actuelle',
+    limitPulse5h:       'Fenêtre 5h',
+    limitPulseOf5h:     (p) => `${p}% de la limite 5h estimée`,
+    limitPulseBasis:    (n) => `Limite 5h estimée à {v} — médiane de ${n} dépassements observés dans vos propres données.`,
+    limitPulseBand:      (lo, hi) => `En général entre ${lo} et ${hi} (moitié centrale des dépassements).`,
     limitPulseToday:    'Aujourd\'hui',
     limitPulseWeek:     'Cette semaine',
-    limitPulseOfDaily:  (p) => `${p}% de la part quotidienne équitable`,
+    limitPulseOfDaily:  (p) => `${p}% de votre journée habituelle`,
     limitPulseOfWeekly: (p) => `${p}% de la limite hebdomadaire estimée`,
     limitPulseNoWeekly: 'Limite hebdomadaire pas encore estimée — nécessite au moins un dépassement hebdomadaire observé.',
-    limitPulseFooter:   'Empirique, non publiée par Anthropic — devient plus précise à mesure que vous utilisez Claude Code.',
     helpSections: [
       {
         title: 'Jetons',
@@ -571,23 +712,39 @@ const STRINGS = {
       },
       {
         title: 'Fenêtre de 5 h',
-        body:  'Fenêtre glissante de 5 heures correspondant à la période de limitation de débit de Claude. « Réinitialisation des 5 h de Claude dans : ~Xh Ym » effectue le compte à rebours jusqu\'à la prochaine réinitialisation.\n~ = approximation : les fichiers de session sont écrits après la fin de chaque réponse, et non au début de la session. Un décalage de 10 à 25 min est possible. Pour l\'heure exacte, consultez Claude Code ou claude.ai.',
+        body:  'Fenêtre ancrée de 5 heures correspondant à la période de limitation de débit de Claude. Elle s\'ouvre avec votre premier message et dure exactement cinq heures. Une nouvelle fenêtre ne commence qu\'une fois ce délai entièrement écoulé — les fenêtres s\'enchaînent par blocs fixes de cinq heures ; une pause au milieu n\'en déclenche pas une nouvelle, et travailler sans interruption n\'en maintient pas une ouverte au-delà de ses cinq heures. Ce n\'est pas une fenêtre glissante des « cinq dernières heures ». Ceci est indépendant de la réinitialisation hebdomadaire : le plafond hebdomadaire se réinitialise selon son propre calendrier et ne force pas le démarrage d\'une nouvelle fenêtre de 5 heures au même moment.\n« Réinitialisation des 5 h de Claude dans : ~Xh Ym » décompte jusqu\'à la fin de la fenêtre ouverte.\n~ = approximation : les fichiers de session sont écrits après la fin de chaque réponse, et non au début de la session. Un décalage de 10 à 25 min est possible. Pour l\'heure exacte, consultez Claude Code ou claude.ai.',
+      },
+      {
+        title: 'Ce qui compte pour une limite',
+        body:  'Anthropic applique deux limites et rien d\'autre : la fenêtre de 5 heures ci-dessus et un plafond hebdomadaire réinitialisé un jour et à une heure fixes. Il n\'existe pas de limite quotidienne — le panneau « Aujourd\'hui » n\'est donc pas un quota, mais une comparaison avec votre propre moyenne.\n\nSeuls les tokens d\'entrée et de sortie comptent. Les lectures et écritures de cache représentent un volume réel, affiché intégralement dans leurs propres lignes, mais elles ne vous rapprochent d\'aucune des deux limites. Cela a été mesuré, pas supposé : pour chaque dépassement observé, le plugin totalise la fenêtre de plusieurs façons, et entrée + sortie est de loin la plus constante au moment où le travail s\'arrête.\n\nAucune des deux limites n\'est publiée. Les deux estimations proviennent de votre propre historique — le plugin ne peut donc les afficher qu\'après vous avoir vu atteindre une limite au moins une fois.',
+      },
+      {
+        title: 'Carte thermique d\'activité',
+        body:  'La grille sur la page Today couvre votre semaine de facturation en cours. Une ligne par jour calendaire, une case par tranche de deux heures, douze cases par jour.\n\nElle compte huit lignes et non sept : une semaine allant du dimanche 18:00 au dimanche 17:59 touche huit dates calendaires, les première et dernière lignes sont donc volontairement partielles. Les cases hors de la fenêtre sont dessinées en contour vide — c\'est ce qui rend visible la limite de votre cycle.\n\nLa couleur indique le rythme, pas le volume. Une fenêtre de 5 heures contient deux tranches et demie de 2 heures ; consommer tout le budget de façon régulière représente donc 40 % par tranche — le rythme qui vous amène exactement au mur à la fermeture de la fenêtre. Le rouge marque ce rythme ou plus rapide ; les paliers en dessous sont un quart, la moitié et jusqu\'à ce rythme. La nuance au sein d\'un palier indique où s\'y situe la valeur.\n\nTrois sortes de vide restent distinctes : hors fenêtre (contour seul), pas encore atteint (pâle) et réellement aucune activité (plein). Seule la dernière dit quelque chose sur le déroulement de votre semaine.\n\nÀ côté de la grille, « Jours actifs » compte les jours de cette semaine de facturation avec de l\'activité.',
+      },
+      {
+        title: 'Exporter vos données',
+        body:  'Trois fichiers CSV : la vue des projets, la matrice jour par vault et les indicateurs clés. Deux chemins pour les obtenir, et ils n\'aboutissent pas au même endroit.\n\nBouton CSV dans l\'en-tête de la barre latérale — le plugin écrit les fichiers dans votre vault, dans le dossier défini sous Réglages → Dossier d\'export CSV. Le menu nomme ce dossier avant que vous cliquiez. Les mêmes exports figurent dans la palette de commandes sous « Export ».\n\nMenu CSV Export du tableau de bord — le tableau de bord est une page web, il remet donc le fichier au navigateur, et c\'est le navigateur qui décide où il atterrit, généralement votre dossier de téléchargements. Une page web ne peut pas choisir un dossier cible ; c\'est une règle du navigateur, pas une fonction manquante.\n\nLes deux chemins produisent des nombres bruts et des dates ISO, directement exploitables. Tout est généré localement — aucun envoi, aucun réseau, comme le reste du plugin.',
+      },
+      {
+        title: 'Réinitialisation hebdomadaire',
+        body:  'La limite hebdomadaire se réinitialise un jour et à une heure fixes, qui diffèrent selon le compte. Tout ce qui concerne la semaine en dépend : l\'anneau hebdomadaire, la prévision, la carte thermique et l\'estimation elle-même.\n\nEn principe, vous n\'avez rien à régler. Lorsque vous atteignez une limite hebdomadaire, Claude inscrit la prochaine heure de réinitialisation dans le message, et le plugin la lit depuis là — les réglages affichent alors une coche verte et la date du dépassement dont la valeur provient. Tant que cela n\'est jamais arrivé, il suppose dimanche 18:00 et le dit.\n\nVous pouvez le définir à la main sous Réglages → Réinitialisation hebdomadaire. Un réglage manuel l\'emporte : la détection automatique ne l\'écrase pas, elle ne fait que le confirmer. Un coup d\'œil s\'impose après un changement d\'heure si votre réinitialisation semble avoir bougé d\'une heure.',
       },
       {
         title: 'Les trois vues temporelles',
-        body:  'Trois découpages indépendants des mêmes données — ils ne sont pas automatiquement imbriqués.\n\nDernière session de 5 heures — fenêtre glissante correspondant à la période de limitation de débit de Claude. Elle est prise en compte dans votre limite d\'utilisation.\n\nCette session — toutes les entrées portant l\'ID de la session actuelle, quelle que soit la date. Une session Claude Code peut s\'étendre sur plusieurs jours. Si vous avez commencé une session hier et la poursuivez aujourd\'hui, Cette session affichera plus de tokens qu\'Aujourd\'hui. C\'est normal — la session s\'accumule au-delà des limites calendaires.\n\nAujourd\'hui — jour calendaire depuis minuit, indépendamment de la session d\'origine des tokens.\n\nLe sous-libellé sous chaque titre indique immédiatement son périmètre exact. Explication complète sur langeatn.de/media/token-usage/',
+        body:  'Trois découpages indépendants des mêmes données — ils ne sont pas automatiquement imbriqués.\n\nDernière session de 5 heures — la fenêtre ancrée décrite plus haut. Elle est prise en compte dans votre limite d\'utilisation.\n\nCette session — toutes les entrées portant l\'ID de la session actuelle, quelle que soit la date. Une session Claude Code peut s\'étendre sur plusieurs jours. Si vous avez commencé une session hier et la poursuivez aujourd\'hui, Cette session affichera plus de tokens qu\'Aujourd\'hui. C\'est normal — la session s\'accumule au-delà des limites calendaires.\n\nAujourd\'hui — jour calendaire depuis minuit, indépendamment de la session d\'origine des tokens.\n\nLe sous-libellé sous chaque titre indique immédiatement son périmètre exact. Explication complète sur langeatn.de/media/token-usage/',
       },
       {
         title: 'Estimation empirique des limites',
-        body:  'Anthropic ne publie pas la limite de tokens réelle derrière un rate-limit hit — elle existe côté serveur et reste invisible. Token Usage la rend visible de façon empirique : chaque rate-limit hit détecté devient un point de données, et suffisamment de points de données donnent une estimation de vos propres limites de session et hebdomadaire (visibles dans la bannière Limit Hero du tableau de bord et dans les cartes Today & This Week de la barre latérale).\n\nCette estimation n\'est pas statique — elle devient discrètement plus précise à mesure que vous utilisez Claude Code. Chaque nouveau rate-limit hit l\'affine davantage, si bien que le chiffre affiché aujourd\'hui est plus fiable que celui de votre première semaine.',
+        body:  'Anthropic ne publie pas la limite de tokens réelle derrière un rate-limit hit — elle existe côté serveur et reste invisible. Token Usage la rend visible de façon empirique : chaque rate-limit hit détecté devient un point de données, et suffisamment de points de données donnent une estimation de vos propres limites de session et hebdomadaire (visibles dans la bannière budget du tableau de bord et dans la barre latérale sous « Situation actuelle », où la ligne sous les trois anneaux indique l\'estimation et le nombre de dépassements observés sur lesquels elle repose).\n\nEn dessous, vous voyez aussi une plage habituelle, la moitié centrale de vos dépassements. La même limite est rarement atteinte au même total exact, car d\'autres usages de Claude que Token Usage ne voit pas (par exemple claude.ai dans le navigateur) puisent dans la même limite. Un chiffre seul paraîtrait plus précis qu\'il ne l\'est.\n\nCette estimation n\'est pas statique — elle devient discrètement plus précise à mesure que vous utilisez Claude Code. Chaque nouveau rate-limit hit l\'affine davantage, si bien que le chiffre affiché aujourd\'hui est plus fiable que celui de votre première semaine.',
       },
       {
-        title: 'Barre latérale NextGen',
-        body:  'La barre latérale propose deux apparences, modifiables à tout moment sous Réglages → Apparence de la barre latérale. Classic est la vue d\'origine sur une seule page et reste la valeur par défaut. NextGen bascule vers une barre d\'icônes avec des pages dédiées Today, Overview et Settings, remplace le graphique quotidien à barres par une carte thermique d\'activité sur 7 jours, et affiche les résumés sur 7 jours et N jours sous forme de tuiles KPI colorées avec sparklines.\n\nDans NextGen, chacune des quatre lignes de tokens d\'Aujourd\'hui reçoit également un repère compact — un point vert lorsque la valeur est proche de votre moyenne récente, une flèche ambre lorsqu\'elle est nettement plus élevée. La fenêtre de comparaison suit votre réglage de conservation des données Claude, pas un nombre de jours fixe.\n\nBasculer entre Classic et NextGen est entièrement réversible et n\'affecte aucune donnée sous-jacente.',
+        title: 'La barre latérale',
+        body:  'Une barre d\'icônes à gauche permet de passer entre quatre pages.\n\nToday — trois anneaux (fenêtre 5h, aujourd\'hui, cette semaine), la carte thermique d\'activité de la semaine de facturation en cours, votre dernière action et la répartition des tokens. Tout ici provient d\'aujourd\'hui ou de la semaine en cours ; ce qui couvre une période plus longue se trouve volontairement ailleurs.\n\nCalendrier — les deux derniers mois sous forme de grilles mensuelles.\n\nAnalytics — les résumés sur 7 jours et N jours en tuiles KPI colorées avec sparklines, ainsi que la répartition par modèle.\n\nSettings — les mêmes réglages que dans l\'onglet des paramètres d\'Obsidian, sans quitter la barre latérale.\n\nDans l\'en-tête : Dashboard et Report génèrent des fichiers, CSV exporte dans votre vault, et la flèche actualise immédiatement.\n\nChacune des quatre lignes de tokens d\'Aujourd\'hui porte un repère compact — un point vert lorsque la valeur est proche de votre moyenne récente, une flèche ambre lorsqu\'elle est nettement plus élevée. La fenêtre de comparaison suit votre réglage de conservation des données Claude, pas un nombre de jours fixe.',
       },
       {
         title: 'Calendrier d\'activité',
-        body:  'Dans la barre latérale NextGen, un calendrier mensuel se trouve en bas de chaque page. Chaque jour passé porte une pastille colorée, pondérée par rapport à votre propre moyenne quotidienne récente : vert en dessous, ambre autour, rouge pour un pic (2x ou plus). Les jours sans activité n\'ont pas de pastille. Les flèches permettent de remonter aussi loin que l\'archive le permet ; le calendrier ne va jamais dans le futur et sert uniquement d\'affichage. Désactivez-le sous Réglages → Calendrier d\'activité si vous préférez une barre latérale plus courte.',
+        body:  'La page Calendrier dans la barre d\'icônes affiche les deux derniers mois l\'un sous l\'autre. Deux plutôt qu\'un, car en début de mois une seule grille ne montre qu\'une poignée de jours utiles et masque précisément la montée en charge que l\'on cherche. Les flèches déplacent la paire vers le passé, aussi loin que l\'archive le permet ; le calendrier ne va jamais dans le futur.\n\nChaque jour passé porte une pastille colorée, pondérée par rapport à votre propre moyenne quotidienne récente : vert en dessous, ambre autour, rouge pour un pic (2x ou plus). Les jours sans activité n\'ont pas de pastille. Un clic sur un jour ajoute une note privée — elle est stockée dans les réglages du plugin, jamais dans vos données de session.',
       },
       {
         title: 'Modèles',
@@ -615,7 +772,7 @@ const STRINGS = {
       },
       {
         title: 'Aperçu des coûts (approximatif, USD)',
-        body:  'Input:        ~3 $ / 1 M de tokens (Sonnet)\nOutput:       ~15 $ / 1 M de tokens\nCache Write:  ~3,75 $ / 1 M de tokens (+25 %)\nCache Read:   ~0,30 $ / 1 M de tokens (−90 %)\n\nLe tarif réel dépend de votre forfait et du modèle. Ces chiffres illustrent pourquoi un facteur de réutilisation élevé réduit considérablement les coûts.',
+        body:  'Input:        ~3 $ / 1 M de tokens (Sonnet)\nOutput:       ~15 $ / 1 M de tokens\nCache Write:  ~3,75 $ / 1 M de tokens (+25 %)\nCache Read:   ~0,30 $ / 1 M de tokens (−90 %)\n\nLe tarif réel dépend de votre forfait et du modèle. Ces chiffres illustrent pourquoi un facteur de réutilisation élevé réduit considérablement les coûts.\n\nCoût et limites sont deux choses distinctes : les tokens de cache coûtent de l\'argent mais ne vous rapprochent ni de la limite 5h ni de la limite hebdomadaire — voir « Ce qui compte pour une limite ».',
       },
     ],
   },
@@ -638,15 +795,18 @@ const STRINGS = {
     glossaryTitle:    'Glossario e concetti',
     glossarySub:      'Cosa significa ogni valore e come essi sono collegati',
     helpLink:         '↗ Documentazione completa su langeatn.de',
-    heatmapTitle:     'Ultimi 7 giorni',
+    heatmapTitle:     'Mappa di attività',
+    heatmapCycle:     (range) => `Il tuo ciclo di fatturazione · ${range}`,
+    timelineSub:      'Una cella = 2 ore. Il rosso è il ritmo che svuota una finestra di 5 ore esattamente alla sua chiusura.',
+    heatLegendVhigh:  'Molto alto',
     heatLegendHigh:   'Alto',
     heatLegendMedium: 'Medio',
     heatLegendLow:    'Basso',
     heatLegendEmpty:  'Nessuna attività',
     models:           'Modelli (ultimi 7 giorni)',
-    last5h:           'Ultima sessione di 5 ore',
+    last5h:           'Finestra di 5 ore corrente',
     waiting:          'In attesa della prossima richiesta...',
-    rollingWindow:    'Finestra mobile · conteggiata nel limite di utilizzo',
+    anchoredWindow:   'Finestra ancorata · conteggiata nel limite di utilizzo',
     backBtn:          '← Indietro',
     spikeAvg:         (r) => `↑ ${r}× media`,
     windowCleared:    'Finestra azzerata · 5 ore completamente disponibili',
@@ -673,12 +833,23 @@ const STRINGS = {
     settingDashDesc:  'Percorso relativo al vault — il file si trova nella cartella del tuo vault, rigenerato a ogni clic e quindi aperto nel browser predefinito. Usa il pulsante per aprirne la posizione.',
     settingArchive:        'Cartella archivio nel vault',
     settingArchiveDesc:    'Cartella relativa al vault — si trova nella cartella del tuo vault, per i riepiloghi giornalieri di utilizzo, un piccolo file Markdown al giorno (solo aggregati, mai il contenuto grezzo delle sessioni). Consente di mantenere le tendenze a lungo termine anche dopo che Claude Code elimina i file di sessione originali. Usa il pulsante per aprirne la posizione.',
+    activeDaysTitle:  'Giorni attivi',
+    activeDaysSub:    'in questa settimana di fatturazione',
+    csvBtnTitle:      'Esporta i file CSV nel tuo vault',
+    csvMenuTarget:    (f) => `Scrive in: ${f}`,
+    csvMenuAll:       'Tutti e tre i file',
+    csvMenuProjects:  'Panoramica progetti',
+    csvMenuDaily:     'Dettaglio giornaliero',
+    csvMenuKpis:      'Indicatori chiave',
+    settingCsv:       'Cartella di esportazione CSV nel vault',
+    settingCsvDesc:   'Cartella relativa al vault per le esportazioni CSV. Esegui uno dei comandi «Export … CSV» dalla palette dei comandi e i file arrivano qui. Anche la dashboard offre le stesse esportazioni, ma sono download del browser e finiscono dove li mette il browser — una pagina web non può scegliere una cartella.',
+    csvNoData:        'Nessun dato da esportare — apri prima la barra laterale Token Usage.',
+    csvFolderFailed:  (f) => `Impossibile creare la cartella di esportazione: ${f}`,
+    csvWritten:       (n, f) => `${n} file CSV scritti in ${f}`,
     settingArchiveEnabled:     'Abilita archivio giornaliero',
     settingArchiveEnabledDesc: 'Scrive automaticamente un file di riepilogo giornaliero. Disattiva se non vuoi che il plugin crei file nel tuo vault.',
     settingReportPeriod:     'Periodo del report',
     settingReportPeriodDesc: 'Fino a quando indietro guardano dashboard e report. Oltre la conservazione dei dati Claude impostata, il periodo viene completato dall\'archivio giornaliero — i giorni recenti restano live, quelli più vecchi provengono da Token Usage Archive/.',
-    settingSidebarMode:      'Aspetto della barra laterale',
-    settingSidebarModeDesc: 'Classic mantiene la barra laterale attuale invariata. NextGen passa a una barra di icone con pagine dedicate Today/Overview/Settings, una mappa di calore dell\'attività su 7 giorni e riquadri KPI colorati con sparkline — più un indicatore compatto accanto a ogni valore in Today, basato sulla tua media recente (segue la tua impostazione di conservazione dei dati Claude).',
     verdictHigh:      (d) => `Più alto della tua media di ${d} giorni per questo tipo — vale la pena controllare.`,
     verdictNormal:    (d) => `Vicino alla tua media di ${d} giorni per questo tipo.`,
     tileTotal:        'Totale',
@@ -686,7 +857,15 @@ const STRINGS = {
     tileActiveDays:   'Giorni attivi',
     tileAvgPerDay:    'Media / giorno attivo',
     railOverview:     'Panoramica',
+    railAnalytics:    'Analisi',
+    railCalendar:     'Calendario',
     railSettings:     'Impostazioni',
+    settingReset:     'Reset settimanale',
+    settingResetDesc: 'Configurazione una tantum: esegui /usage in Claude Code, leggi quando viene azzerato il tuo limite settimanale e impostalo qui. Anthropic lo assegna per account — non è uguale per tutti. Fino ad allora il plugin presume domenica 18:00 e ogni valore settimanale può essere errato.',
+    settingResetAuto: (d) => `Rilevato automaticamente dal tuo superamento settimanale del ${d} — nessuna configurazione necessaria. Modificalo solo se sembra sbagliato.`,
+    settingResetDone: (d) => `Impostato manualmente il ${d}. Aggiornalo se il reset cambia (per esempio dopo il cambio dell\'ora).`,
+    calSun: 'Domenica', calMon: 'Lunedì', calTue: 'Martedì', calWed: 'Mercoledì',
+    calThu: 'Giovedì', calFri: 'Venerdì', calSat: 'Sabato',
     settingSource:    (p) => `Fonte: ${p} — nessuna chiave API richiesta.`,
     settingCleanup:     'Conservazione dei dati Claude (giorni)',
     settingCleanupDesc: 'Determina per quanto tempo Claude Code conserva i file di sessione. Predefinito: 30 giorni. Per il controllo a lungo termine (andamento dei costi, confronto dei piani) consigliato: 90–180 giorni. Scrive direttamente nel file settings.json di Claude Code; prima di ogni modifica viene creato automaticamente un backup (.bak).',
@@ -698,8 +877,6 @@ const STRINGS = {
     archiveBackfilled: (n) => `Token Usage ha archiviato ${n} giorni di cronologia.`,
     calPrev:          'Mese precedente',
     calNext:          'Mese successivo',
-    settingCalendar:     'Calendario attività (NextGen)',
-    settingCalendarDesc: 'Mostra in fondo alla barra laterale NextGen un calendario mensile con un punto colorato per giorno, ponderato rispetto alla tua media giornaliera recente (verde sotto, ambra intorno, rosso ben sopra). La barra laterale Classic non è interessata.',
     calNoteTitle:     (d) => `Nota — ${d}`,
     calNotePlaceholder: 'Aggiungi una nota sul consumo di oggi (facoltativo)...',
     calNoteSave:      'Salva',
@@ -707,13 +884,16 @@ const STRINGS = {
     calNoteCancel:    'Annulla',
     calNoteAdd:       'Clicca per aggiungere una nota',
     calNoteEdit:      'Clicca per modificare la nota',
-    limitPulseTitle:    'Oggi e questa settimana',
+    limitPulseTitle:    'Situazione attuale',
+    limitPulse5h:       'Finestra 5h',
+    limitPulseOf5h:     (p) => `${p}% del limite 5h stimato`,
+    limitPulseBasis:    (n) => `Limite 5h stimato a {v} — mediana di ${n} limiti osservati nei tuoi dati.`,
+    limitPulseBand:      (lo, hi) => `Di solito tra ${lo} e ${hi} (metà centrale dei limiti).`,
     limitPulseToday:    'Oggi',
     limitPulseWeek:     'Questa settimana',
-    limitPulseOfDaily:  (p) => `${p}% della quota giornaliera equa`,
+    limitPulseOfDaily:  (p) => `${p}% della tua giornata tipica`,
     limitPulseOfWeekly: (p) => `${p}% del limite settimanale stimato`,
     limitPulseNoWeekly: 'Limite settimanale non ancora stimato — serve almeno un limite settimanale osservato.',
-    limitPulseFooter:   'Empirico, non pubblicato da Anthropic — diventa più preciso quanto più usi Claude Code.',
     helpSections: [
       {
         title: 'Token',
@@ -737,23 +917,39 @@ const STRINGS = {
       },
       {
         title: 'Finestra di 5 ore',
-        body:  'La finestra mobile di utilizzo di Claude è di 5 ore. «Al prossimo reset mancano: ~Xh Ym» mostra il conto alla rovescia fino al prossimo azzeramento.\n~ = approssimazione: i file di sessione vengono scritti dopo il completamento di ogni risposta, non all\'avvio della sessione. Può esserci un ritardo di 10–25 minuti. Per l\'orario preciso, controlla Claude Code o claude.ai.',
+        body:  'Finestra ancorata di 5 ore, corrispondente al periodo di rate limit di Claude. Si apre con il primo messaggio e dura esattamente cinque ore. Una nuova finestra inizia solo quando questo intervallo è trascorso del tutto — le finestre sono concatenate in blocchi fissi di cinque ore; una pausa a metà non ne avvia una nuova, e lavorare senza interruzioni non ne mantiene una aperta oltre le sue cinque ore. Non è una finestra mobile delle «ultime cinque ore». Questo è indipendente dal reset settimanale: il tetto settimanale si azzera secondo il proprio calendario e non forza l\'avvio di una nuova finestra di 5 ore nello stesso momento.\n«Al prossimo reset mancano: ~Xh Ym» conta alla rovescia fino alla fine della finestra aperta.\n~ = approssimazione: i file di sessione vengono scritti dopo il completamento di ogni risposta, non all\'avvio della sessione. Può esserci un ritardo di 10–25 minuti. Per l\'orario preciso, controlla Claude Code o claude.ai.',
+      },
+      {
+        title: 'Cosa conta per un limite',
+        body:  'Anthropic applica due limiti e nient\'altro: la finestra di 5 ore qui sopra e un tetto settimanale che si azzera in un giorno e a un\'ora fissi. Non esiste un limite giornaliero — il pannello «Oggi» non è quindi una quota, ma un confronto con la tua media.\n\nContano solo i token di input e output. Letture e scritture di cache sono volume reale e sono mostrate per intero nelle loro righe, ma non ti avvicinano a nessuno dei due limiti. Questo è misurato, non supposto: per ogni limite osservato il plugin somma la finestra in più modi, e input + output è di gran lunga il valore più coerente nel momento in cui il lavoro si ferma.\n\nNessuno dei due limiti è pubblicato. Entrambe le stime derivano dalla tua cronologia — per questo il plugin può mostrarle solo dopo averti visto raggiungere un limite almeno una volta.',
+      },
+      {
+        title: 'Mappa di attività',
+        body:  'La griglia nella pagina Today copre la tua settimana di fatturazione in corso. Una riga per giorno di calendario, una cella ogni due ore, dodici celle al giorno.\n\nHa otto righe, non sette: una settimana che va da domenica 18:00 a domenica 17:59 tocca otto date di calendario, quindi la prima e l\'ultima riga sono volutamente parziali. Le celle fuori dalla finestra sono disegnate come contorni vuoti — è questo che rende visibile il confine del tuo ciclo.\n\nIl colore indica il ritmo, non il volume. Una finestra di 5 ore contiene due intervalli e mezzo da 2 ore; consumare tutto il budget in modo uniforme significa quindi il 40% per intervallo — il ritmo con cui arrivi al muro esattamente alla chiusura della finestra. Il rosso segna quel ritmo o superiore; i livelli sottostanti sono un quarto, la metà e fino a quel ritmo. La sfumatura all\'interno di un livello indica dove si colloca il valore.\n\nTre tipi di vuoto restano distinti: fuori dalla finestra (solo contorno), non ancora raggiunto (pallido) e davvero nessuna attività (pieno). Solo l\'ultimo dice qualcosa su come è andata la tua settimana.\n\nAccanto alla griglia, «Giorni attivi» conta i giorni di questa settimana di fatturazione con attività.',
+      },
+      {
+        title: 'Esportare i dati',
+        body:  'Tre file CSV: la panoramica progetti, la matrice giorno per vault e gli indicatori chiave. Due strade per ottenerli, e non finiscono nello stesso posto.\n\nPulsante CSV nell\'intestazione della barra laterale — il plugin scrive i file nel tuo vault, nella cartella impostata in Impostazioni → Cartella di esportazione CSV. Il menu indica quella cartella prima che tu clicchi. Le stesse esportazioni sono nella palette dei comandi sotto «Export».\n\nMenu CSV Export della dashboard — la dashboard è una pagina web, quindi consegna il file al browser, ed è il browser a decidere dove finisce, di solito la cartella dei download. Una pagina web non può scegliere una cartella di destinazione; è una regola del browser, non una funzione mancante.\n\nEntrambe le strade producono numeri grezzi e date ISO, pronti per essere elaborati. Tutto viene generato localmente — nessun caricamento, nessuna rete, come il resto del plugin.',
+      },
+      {
+        title: 'Reset settimanale',
+        body:  'Il limite settimanale si azzera in un giorno e a un\'ora fissi, diversi per ogni account. Tutto ciò che riguarda la settimana dipende da questo: l\'anello settimanale, la previsione, la mappa di calore e la stima stessa.\n\nNormalmente non devi impostare nulla. Quando raggiungi un limite settimanale, Claude scrive nel messaggio l\'orario del prossimo reset, e il plugin lo legge da lì — le impostazioni mostrano allora un segno di spunta verde e la data del limite da cui proviene il valore. Finché questo non è mai accaduto, assume domenica 18:00 e lo dichiara.\n\nPuoi impostarlo manualmente in Impostazioni → Reset settimanale. Un\'impostazione manuale prevale: il rilevamento automatico non la sovrascrive, si limita a confermarla. Vale la pena ricontrollare dopo un cambio dell\'ora, se il reset sembra essersi spostato di un\'ora.',
       },
       {
         title: 'Le tre viste temporali',
-        body:  'Tre viste indipendenti sugli stessi dati — non sono automaticamente annidate.\n\nUltima sessione di 5 ore — finestra mobile corrispondente al periodo del limite di utilizzo di Claude. Conta ai fini del limite di utilizzo.\n\nQuesta sessione — tutte le voci con l\'ID della sessione corrente, indipendentemente dalla data di calendario. Una sessione di Claude Code può durare più giorni. Se hai iniziato una sessione ieri e la stai ancora usando oggi, Questa sessione mostrerà più token di Oggi. È previsto — la sessione si accumula oltre i confini del calendario.\n\nOggi — giorno di calendario da mezzanotte, indipendentemente dalla sessione da cui provengono i token.\n\nIl sottotitolo sotto ogni titolo mostra subito l\'ambito esatto. Spiegazione completa su langeatn.de/media/token-usage/',
+        body:  'Tre viste indipendenti sugli stessi dati — non sono automaticamente annidate.\n\nUltima sessione di 5 ore — la finestra ancorata descritta sopra. Conta ai fini del limite di utilizzo.\n\nQuesta sessione — tutte le voci con l\'ID della sessione corrente, indipendentemente dalla data di calendario. Una sessione di Claude Code può durare più giorni. Se hai iniziato una sessione ieri e la stai ancora usando oggi, Questa sessione mostrerà più token di Oggi. È previsto — la sessione si accumula oltre i confini del calendario.\n\nOggi — giorno di calendario da mezzanotte, indipendentemente dalla sessione da cui provengono i token.\n\nIl sottotitolo sotto ogni titolo mostra subito l\'ambito esatto. Spiegazione completa su langeatn.de/media/token-usage/',
       },
       {
         title: 'Stima empirica dei limiti',
-        body:  'Anthropic non pubblica il limite di token reale dietro un rate-limit hit — esiste lato server e resta invisibile. Token Usage lo rende visibile in modo empirico: ogni rate-limit hit rilevato diventa un punto dati, e punti dati sufficienti diventano una stima dei tuoi limiti personali di sessione e settimanali (visibili nel banner Limit Hero della dashboard e nelle card Today & This Week della barra laterale).\n\nLa stima non è statica — diventa silenziosamente più precisa quanto più usi Claude Code. Ogni nuovo rate-limit hit la affina ulteriormente, quindi il numero che vedi oggi è più affidabile di quello della tua prima settimana.',
+        body:  'Anthropic non pubblica il limite di token reale dietro un rate-limit hit — esiste lato server e resta invisibile. Token Usage lo rende visibile in modo empirico: ogni rate-limit hit rilevato diventa un punto dati, e punti dati sufficienti diventano una stima dei tuoi limiti personali di sessione e settimanali (visibili nel banner del budget della dashboard e nella barra laterale sotto «Situazione attuale», dove la riga sotto i tre anelli indica la stima e su quanti limiti osservati si basa).\n\nSotto vedi anche una fascia abituale, la metà centrale dei tuoi limiti. Lo stesso limite raramente viene raggiunto allo stesso totale esatto, perché anche altro uso di Claude che Token Usage non può vedere (ad esempio claude.ai nel browser) attinge allo stesso limite. Un solo numero sembrerebbe più preciso di quanto sia.\n\nLa stima non è statica — diventa silenziosamente più precisa quanto più usi Claude Code. Ogni nuovo rate-limit hit la affina ulteriormente, quindi il numero che vedi oggi è più affidabile di quello della tua prima settimana.',
       },
       {
-        title: 'Barra laterale NextGen',
-        body:  'La barra laterale ha due aspetti, cambiabili in qualsiasi momento in Impostazioni → Aspetto della barra laterale. Classic è la vista originale a pagina singola e resta l\'impostazione predefinita. NextGen passa a una barra di icone con pagine dedicate Today, Overview e Settings, sostituisce il grafico a barre giornaliero con una mappa di calore dell\'attività su 7 giorni e mostra i riepiloghi su 7 giorni e N giorni come riquadri KPI colorati con sparkline.\n\nIn NextGen, ciascuna delle quattro righe di token in Oggi riceve anche un indicatore compatto — un punto verde quando il valore è vicino alla tua media recente, una freccia ambra quando è nettamente più alto. La finestra di confronto segue la tua impostazione di conservazione dei dati Claude, non un numero fisso di giorni.\n\nIl passaggio tra Classic e NextGen è completamente reversibile e non influisce sui dati sottostanti.',
+        title: 'La barra laterale',
+        body:  'Una barra di icone a sinistra passa tra quattro pagine.\n\nToday — tre anelli (finestra 5h, oggi, questa settimana), la mappa di calore della settimana di fatturazione in corso, la tua ultima azione e la ripartizione dei token. Tutto qui proviene da oggi o dalla settimana in corso; ciò che copre un periodo più lungo si trova volutamente altrove.\n\nCalendario — gli ultimi due mesi come griglie mensili.\n\nAnalytics — i riepiloghi su 7 giorni e N giorni come riquadri KPI colorati con sparkline, più la distribuzione per modello.\n\nSettings — le stesse impostazioni della scheda impostazioni di Obsidian, senza lasciare la barra laterale.\n\nNell\'intestazione: Dashboard e Report generano file, CSV esporta nel tuo vault, la freccia aggiorna subito.\n\nCiascuna delle quattro righe di token in Oggi porta un indicatore compatto — un punto verde quando il valore è vicino alla tua media recente, una freccia ambra quando è nettamente più alto. La finestra di confronto segue la tua impostazione di conservazione dei dati Claude, non un numero fisso di giorni.',
       },
       {
         title: 'Calendario attività',
-        body:  'Nella barra laterale NextGen, in fondo a ogni pagina si trova un calendario mensile. Ogni giorno passato ha un punto colorato, ponderato rispetto alla tua media giornaliera recente: verde sotto la media, ambra intorno ad essa, rosso per un picco (2x o più). I giorni senza attività non hanno punto. Con le frecce puoi tornare indietro fin dove arriva l\'archivio; il calendario non va mai nel futuro ed è solo di visualizzazione. Disattivalo in Impostazioni → Calendario attività se preferisci una barra laterale più corta.',
+        body:  'La pagina Calendario nella barra di icone mostra gli ultimi due mesi uno sotto l\'altro. Due invece di uno, perché a inizio mese una sola griglia mostrerebbe pochi giorni utili e nasconderebbe proprio la rincorsa che si sta cercando. Le frecce spostano la coppia più indietro, fin dove arriva l\'archivio; il calendario non va mai nel futuro.\n\nOgni giorno passato ha un punto colorato, ponderato rispetto alla tua media giornaliera recente: verde sotto la media, ambra intorno ad essa, rosso per un picco (2x o più). I giorni senza attività non hanno punto. Un clic su un giorno aggiunge una nota privata — è salvata nelle impostazioni del plugin, mai nei tuoi dati di sessione.',
       },
       {
         title: 'Modelli',
@@ -781,7 +977,215 @@ const STRINGS = {
       },
       {
         title: 'Panoramica dei costi (approssimativa, USD)',
-        body:  'Input:        ~3 $ / 1 M di token (Sonnet)\nOutput:       ~15 $ / 1 M di token\nCache Write:  ~3,75 $ / 1 M di token (+25%)\nCache Read:   ~0,30 $ / 1 M di token (−90%)\n\nIl prezzo effettivo dipende dal tuo piano e dal modello. Questi valori mostrano perché un fattore di riutilizzo elevato riduce significativamente i costi.',
+        body:  'Input:        ~3 $ / 1 M di token (Sonnet)\nOutput:       ~15 $ / 1 M di token\nCache Write:  ~3,75 $ / 1 M di token (+25%)\nCache Read:   ~0,30 $ / 1 M di token (−90%)\n\nIl prezzo effettivo dipende dal tuo piano e dal modello. Questi valori mostrano perché un fattore di riutilizzo elevato riduce significativamente i costi.\n\nCosto e limiti sono due cose diverse: i token di cache costano denaro ma non ti avvicinano al limite di 5 ore né a quello settimanale — vedi «Cosa conta per un limite».',
+      },
+    ],
+  },
+  // Spanish (Björn, 03.10.2026) — machine-assisted translation, reviewed for the terms that
+  // carry meaning rather than word-for-word: "ventana de 5 horas", "semana de facturación",
+  // "token" stays English as it does in every other language here.
+  es: {
+    loading:          'Cargando...',
+    lastAction:       'Última acción',
+    chipIn:           'Ent',
+    chipOut:          'Sal',
+    chipCWr:          'C.Esc',
+    chipCRd:          'C.Lec',
+    startedYesterday: 'Comenzó ayer · abarca varios días',
+    startedDate:      (d) => `Comenzó el ${d} · abarca varios días`,
+    startedToday:     (t) => `Comenzó hoy a las ${t}`,
+    thisSession:      'Esta sesión',
+    today:            'Hoy',
+    calendarDay:      'Día natural · desde medianoche',
+    sevenDays:        '7 días',
+    thirtyDays:       (n) => `${n} días`,
+    resetsIn:         (d) => `La ventana de 5 h de Claude se reinicia en: ~${d}`,
+    glossaryTitle:    'Glosario y conceptos',
+    glossarySub:      'Qué significa cada valor y cómo se relacionan',
+    helpLink:         '↗ Documentación completa en langeatn.de',
+    heatmapTitle:     'Mapa de actividad',
+    heatmapCycle:     (range) => `Tu ciclo de facturación · ${range}`,
+    timelineSub:      'Una celda = 2 horas. El rojo es el ritmo que vaciaría una ventana de 5 horas justo al cerrarse.',
+    heatLegendVhigh:  'Muy alto',
+    heatLegendHigh:   'Alto',
+    heatLegendMedium: 'Medio',
+    heatLegendLow:    'Bajo',
+    heatLegendEmpty:  'Sin actividad',
+    models:           'Modelos (últimos 7 días)',
+    last5h:           'Ventana de 5 h actual',
+    waiting:          'Esperando la siguiente petición...',
+    anchoredWindow:   'Ventana anclada · cuenta para el límite de uso',
+    backBtn:          '← Volver',
+    spikeAvg:         (r) => `↑ ${r}× media`,
+    windowCleared:    'Ventana reiniciada · 5 h completas disponibles',
+    noData:           'Token Usage: todavía no hay datos.',
+    reportCreated:    'Informe de Token Usage creado.',
+    reportFailed:     'Error al crear el informe: ',
+    vaultReportCreated: 'Informe de proyectos de Token Usage creado.',
+    vaultReportFailed:  'Error al crear el informe del vault: ',
+    dashOpened:       'Panel abierto en el navegador.',
+    dashFailed:       'Error al abrir el panel: ',
+    rowInput:         'Entrada',
+    rowOutput:        'Salida',
+    rowCWrite:        'C.Escritura',
+    rowCRead:         'C.Lectura',
+    settingLang:      'Idioma',
+    settingLangDesc:  'Idioma de la interfaz del plugin. Se aplica de inmediato.',
+    settingRefresh:   'Intervalo de actualización automática (segundos)',
+    settingRefreshDesc: 'Intervalo de sondeo de reserva. El vigilante de archivos reacciona de inmediato a cada nueva respuesta de Claude — esto es solo el respaldo.',
+    settingReport:    'Ruta del informe en el vault',
+    settingReportDesc: 'Ruta relativa al vault — el archivo vive dentro de tu carpeta del vault, junto a tus notas, y se sobrescribe con cada clic. Usa el botón para abrir su ubicación.',
+    settingVaultReport:    'Ruta del informe de proyectos en el vault',
+    settingVaultReportDesc: 'Ruta relativa al vault para el desglose de uso por proyecto y vault — un archivo aparte del informe principal, útil para entregar a clientes como referencia de uso o facturación. Usa el botón para abrir su ubicación.',
+    settingDash:      'Ruta del panel en el vault',
+    settingDashDesc:  'Ruta relativa al vault — el archivo vive dentro de tu carpeta del vault, se regenera con cada clic y se abre en tu navegador predeterminado. Usa el botón para abrir su ubicación.',
+    settingArchive:        'Carpeta de archivo en el vault',
+    settingArchiveDesc:    'Carpeta relativa al vault — vive dentro de tu carpeta del vault y guarda resúmenes diarios de uso, un pequeño archivo Markdown por día (solo agregados, nunca el contenido de las sesiones). Permite conservar tendencias a largo plazo incluso después de que Claude Code borre los archivos de sesión originales. Usa el botón para abrir su ubicación.',
+    activeDaysTitle:  'Días activos',
+    activeDaysSub:    'en esta semana de facturación',
+    csvBtnTitle:      'Exportar archivos CSV a tu vault',
+    csvMenuTarget:    (f) => `Escribe en: ${f}`,
+    csvMenuAll:       'Los tres archivos',
+    csvMenuProjects:  'Resumen de proyectos',
+    csvMenuDaily:     'Detalle diario',
+    csvMenuKpis:      'Indicadores clave',
+    settingCsv:       'Carpeta de exportación CSV en el vault',
+    settingCsvDesc:   'Carpeta relativa al vault para las exportaciones CSV. Ejecuta uno de los comandos «Export … CSV» desde la paleta de comandos y los archivos acaban aquí. El panel ofrece las mismas exportaciones, pero esas son descargas del navegador y van donde el navegador las deje — una página web no puede elegir carpeta.',
+    csvNoData:        'Todavía no hay datos para exportar — abre primero la barra lateral de Token Usage.',
+    csvFolderFailed:  (f) => `No se pudo crear la carpeta de exportación: ${f}`,
+    csvWritten:       (n, f) => `${n} archivo(s) CSV escritos en ${f}`,
+    settingArchiveEnabled:     'Activar archivo diario',
+    settingArchiveEnabledDesc: 'Escribe automáticamente un archivo de resumen diario. Desactívalo si no quieres que el plugin cree archivos en tu vault.',
+    settingReportPeriod:     'Periodo del informe',
+    settingReportPeriodDesc: 'Hasta dónde miran hacia atrás el panel y el informe. Más allá de tu retención de datos de Claude, esto se completa desde el archivo diario — los días recientes siguen en vivo, los antiguos vienen de Token Usage Archive/.',
+    verdictHigh:      (d) => `Más alto que tu media de ${d} días para este tipo — merece un vistazo.`,
+    verdictNormal:    (d) => `Cerca de tu media de ${d} días para este tipo.`,
+    tileTotal:        'Total',
+    tileCalls:        'Llamadas',
+    tileActiveDays:   'Días activos',
+    tileAvgPerDay:    'Media / día activo',
+    railOverview:     'Resumen',
+    railAnalytics:    'Analíticas',
+    railCalendar:     'Calendario',
+    railSettings:     'Ajustes',
+    settingReset:     'Reinicio semanal',
+    settingResetDesc: 'Configuración única: ejecuta /usage en Claude Code, mira cuándo se reinicia tu límite semanal e indícalo aquí. Anthropic lo asigna por cuenta — no es igual para todos. Hasta que lo hagas, el plugin supone domingo a las 18:00 y cualquier cifra semanal puede estar desviada.',
+    settingResetAuto: (d) => `Detectado automáticamente a partir de tu límite semanal alcanzado el ${d} — no hace falta configurar nada. Cámbialo abajo solo si parece incorrecto.`,
+    settingResetDone: (d) => `Establecido manualmente el ${d}. Actualízalo si tu reinicio cambia (por ejemplo tras un cambio de hora).`,
+    calSun: 'Domingo', calMon: 'Lunes', calTue: 'Martes', calWed: 'Miércoles',
+    calThu: 'Jueves', calFri: 'Viernes', calSat: 'Sábado',
+    settingSource:    (p) => `Fuente: ${p} — no se necesita clave de API.`,
+    settingCleanup:     'Retención de datos de Claude (días)',
+    settingCleanupDesc: 'Controla cuánto tiempo conserva Claude Code los archivos de sesión. Por defecto: 30 días. Para control a largo plazo (tendencias de coste, comparación de contratos) se recomiendan 90–180 días. Escribe directamente en el settings.json de Claude Code; se crea automáticamente una copia (.bak) antes de cada cambio.',
+    settingPathsHeading: 'Ubicaciones de archivos',
+    settingShowInFolder: 'Mostrar en la carpeta',
+    settingShowInFolderFailed: 'No se pudo abrir el explorador de archivos para esta ruta: ',
+    cleanupSaved:  (n) => `Retención actualizada — Claude Code conservará ahora los archivos de sesión durante ${n} días.`,
+    cleanupFailed: 'Error al actualizar la retención: ',
+    archiveBackfilled: (n) => `Token Usage archivó ${n} días de historial.`,
+    calPrev:          'Mes anterior',
+    calNext:          'Mes siguiente',
+    calNoteTitle:     (d) => `Nota — ${d}`,
+    calNotePlaceholder: 'Añade una nota sobre el uso de este día (opcional)...',
+    calNoteSave:      'Guardar',
+    calNoteDelete:    'Eliminar nota',
+    calNoteCancel:    'Cancelar',
+    calNoteAdd:       'Haz clic para añadir una nota',
+    calNoteEdit:      'Haz clic para editar la nota',
+    limitPulseTitle:    'Situación actual',
+    limitPulse5h:       'Ventana 5 h',
+    limitPulseOf5h:     (p) => `${p}% del límite estimado de 5 h`,
+    limitPulseBasis:    (n) => `Límite de 5 h estimado en {v} — mediana de ${n} límites observados en tus propios datos.`,
+    limitPulseBand:      (lo, hi) => `Normalmente entre ${lo} y ${hi} (mitad central de los límites).`,
+    limitPulseToday:    'Hoy',
+    limitPulseWeek:     'Esta semana',
+    limitPulseOfDaily:  (p) => `${p}% de tu día habitual`,
+    limitPulseOfWeekly: (p) => `${p}% del límite semanal estimado`,
+    limitPulseNoWeekly: 'Límite semanal aún no estimado — hace falta al menos un límite semanal observado.',
+    helpSections: [
+      {
+        title: 'Tokens',
+        body:  'La unidad que Claude factura. Cada palabra, signo de puntuación y espacio de un mensaje se divide en tokens — aproximadamente 4 caracteres o 3/4 de palabra cada uno. Se cuentan por separado TANTO lo que envías COMO la respuesta de Claude.',
+      },
+      {
+        title: 'Entrada y salida',
+        body:  'Entrada = todo lo que envías (mensaje + historial de la conversación + prompt del sistema). Salida = todo lo que Claude escribe de vuelta. Los tokens de salida suelen costar entre 3 y 5 veces más que los de entrada.',
+      },
+      {
+        title: 'C.Escritura — escritura en caché',
+        body:  'Cuando Claude procesa por primera vez un contexto largo, puede guardarlo («escribirlo») en una caché de prompts. La escritura en caché cuesta ~1,25× la entrada normal — un pequeño sobrecoste por adelantado que desbloquea ahorros posteriores.',
+      },
+      {
+        title: 'C.Lectura — lectura de caché',
+        body:  'Cualquier petición posterior que reutilice el mismo contexto en caché se sirve a ~0,10× el precio de entrada — unas 10 veces más barato que reprocesarlo. Un valor alto de C.Lectura significa que estás trabajando de forma eficiente con el mismo material.',
+      },
+      {
+        title: 'C.Escritura vs C.Lectura — qué dice la proporción',
+        body:  'Factor de reutilización = C.Lectura ÷ C.Escritura. Proporción alta → concentración profunda, el mismo contexto en muchas peticiones. Proporción baja → modo exploratorio, cambios constantes de contexto.\n\n≥ 8×  Concentración profunda — excelente rendimiento de la caché.\n3–8×  Equilibrado — trabajo enfocado con algo de variedad.\n1–3×  Exploratorio — contexto nuevo con frecuencia.\n< 1×  Reutilización mínima — sobre todo sesiones cortas independientes.',
+      },
+      {
+        title: 'Ventana de 5 horas',
+        body:  'Ventana anclada de 5 horas que corresponde al periodo de límite de uso de Claude. Se abre con tu primer mensaje y dura exactamente cinco horas. Una nueva ventana empieza solo cuando ese plazo ha transcurrido por completo — las ventanas se encadenan en bloques fijos de cinco horas; una pausa a mitad de camino no abre una nueva, y trabajar sin interrupción no mantiene una abierta más allá de sus cinco horas. No es una ventana móvil de «las últimas cinco horas». Esto es independiente del reinicio semanal: el tope semanal se reinicia según su propio calendario y no obliga a que empiece una nueva ventana de 5 horas en ese mismo momento.\n«La ventana de 5 h de Claude se reinicia en: ~Xh Ym» cuenta atrás hasta el final de la ventana abierta.\n~ = aproximación: los archivos de sesión se escriben al completarse cada respuesta, no al iniciarse la sesión. Puede haber un retraso de 10 a 25 min. Para la hora exacta, consulta Claude Code o claude.ai.',
+      },
+      {
+        title: 'Qué cuenta para un límite',
+        body:  'Anthropic aplica dos límites y ninguno más: la ventana de 5 horas de arriba y un tope semanal que se reinicia un día y a una hora fijos. No existe un límite diario — por eso el panel «Hoy» no es una cuota, sino una comparación con tu propia media reciente.\n\nSolo cuentan los tokens de entrada y salida. Las lecturas y escrituras de caché son volumen real y se muestran íntegras en sus propias filas, pero no te acercan a ninguno de los dos límites. Esto está medido, no supuesto: para cada límite observado el plugin suma la ventana de varias formas, y entrada + salida es con diferencia la más consistente en el momento en que el trabajo se detiene.\n\nNinguno de los dos límites es público. Ambas estimaciones salen de tu propio historial — por eso el plugin solo puede mostrarlas después de haberte visto alcanzar un límite al menos una vez.',
+      },
+      {
+        title: 'Mapa de actividad',
+        body:  'La cuadrícula de la página Today cubre tu semana de facturación en curso. Una fila por día natural, una celda cada dos horas, doce celdas al día.\n\nTiene ocho filas, no siete: una semana que va de domingo 18:00 a domingo 17:59 toca ocho fechas del calendario, así que la primera y la última fila son parciales a propósito. Las celdas fuera de la ventana se dibujan solo con contorno — eso es lo que hace visible el límite de tu ciclo.\n\nEl color indica el ritmo, no el volumen. Una ventana de 5 horas contiene dos tramos y medio de 2 horas; gastar todo el presupuesto de forma uniforme son por tanto el 40% por tramo — el ritmo con el que llegas al muro justo al cerrarse la ventana. El rojo marca ese ritmo o más rápido; los niveles inferiores son un cuarto, la mitad y hasta ese ritmo. El matiz dentro de un nivel indica dónde se sitúa el valor.\n\nTres clases de vacío se mantienen separadas: fuera de la ventana (solo contorno), aún no alcanzado (pálido) y realmente sin actividad (relleno). Solo la última dice algo sobre cómo fue tu semana.\n\nJunto a la cuadrícula, «Días activos» cuenta los días de esta semana de facturación con actividad.',
+      },
+      {
+        title: 'Exportar tus datos',
+        body:  'Tres archivos CSV: el resumen de proyectos, la matriz día por vault y los indicadores clave. Dos caminos para obtenerlos, y acaban en sitios distintos.\n\nBotón CSV en la cabecera de la barra lateral — el plugin escribe los archivos en tu vault, en la carpeta configurada en Ajustes → Carpeta de exportación CSV. El menú indica esa carpeta antes de que hagas clic. Las mismas exportaciones están en la paleta de comandos bajo «Export».\n\nMenú CSV Export del panel — el panel es una página web, así que entrega el archivo al navegador y es el navegador quien decide dónde acaba, normalmente tu carpeta de descargas. Una página web no puede elegir carpeta de destino; es una regla del navegador, no una función que falte.\n\nAmbos caminos producen números en bruto y fechas ISO, listos para calcular. Todo se genera localmente — sin subidas, sin red, como el resto del plugin.',
+      },
+      {
+        title: 'Reinicio semanal',
+        body:  'El límite semanal se reinicia un día y a una hora fijos, distintos para cada cuenta. Todo lo relacionado con la semana depende de ello: el anillo semanal, la previsión, el mapa de actividad y la propia estimación.\n\nNormalmente no tienes que configurar nada. Cuando alcanzas un límite semanal, Claude escribe en el mensaje la hora del siguiente reinicio, y el plugin la lee de ahí — los ajustes muestran entonces una marca verde y la fecha del límite del que procede el valor. Mientras eso no haya ocurrido nunca, supone domingo a las 18:00 y lo indica.\n\nPuedes fijarlo a mano en Ajustes → Reinicio semanal. Un ajuste manual prevalece: la detección automática no lo sobrescribe, solo lo confirma. Conviene revisarlo tras un cambio de hora si tu reinicio parece haberse movido una hora.',
+      },
+      {
+        title: 'Las tres vistas temporales',
+        body:  'Tres cortes independientes de los mismos datos — no están anidados automáticamente.\n\nÚltima sesión de 5 horas — la ventana anclada descrita arriba. Cuenta para tu límite de uso.\n\nEsta sesión — todas las entradas con el ID de sesión actual, sin importar la fecha. Una sesión de Claude Code puede abarcar varios días. Si empezaste ayer y sigues en ella hoy, «Esta sesión» mostrará más tokens que «Hoy». Es lo esperado — la sesión acumula más allá de los límites del calendario.\n\nHoy — día natural desde medianoche, sin importar de qué sesión vengan los tokens.\n\nLa descripción bajo cada título muestra su alcance exacto de un vistazo. Explicación completa en langeatn.de/media/token-usage/',
+      },
+      {
+        title: 'Estimación empírica de límites',
+        body:  'Anthropic no publica el límite real de tokens que hay detrás de un rate-limit hit — existe en el servidor y permanece invisible. Token Usage lo hace visible de forma empírica: cada rate-limit hit detectado se convierte en un dato, y suficientes datos dan una estimación de tus propios límites de sesión y semanal (visibles en el banner de presupuesto del panel y en la barra lateral bajo «Situación actual», donde la línea bajo los tres anillos indica la estimación y sobre cuántos límites observados se basa).\n\nDebajo ves también una banda habitual, la mitad central de tus límites. El mismo límite rara vez se alcanza con exactamente el mismo total, porque otro uso de Claude que Token Usage no puede ver (por ejemplo claude.ai en el navegador) consume del mismo límite. Un solo número parecería más preciso de lo que es.\n\nLa estimación no es estática — se vuelve más precisa cuanto más usas Claude Code. Cada nuevo rate-limit hit la afina, de modo que la cifra que ves hoy es más fiable que la de tu primera semana.',
+      },
+      {
+        title: 'La barra lateral',
+        body:  'Una barra de iconos a la izquierda cambia entre cuatro páginas.\n\nToday — tres anillos (ventana 5 h, hoy, esta semana), el mapa de actividad de la semana de facturación en curso, tu última acción y el desglose de tokens. Todo aquí es de hoy o de la semana en curso; lo que abarca más tiempo está deliberadamente en otro sitio.\n\nCalendario — los dos últimos meses como cuadrículas mensuales.\n\nAnalíticas — los resúmenes de 7 y N días como tarjetas KPI con minigráficos de tendencia, más la distribución por modelo.\n\nAjustes — los mismos ajustes que en la pestaña de configuración de Obsidian, sin salir de la barra lateral.\n\nEn la cabecera: Dashboard e Report generan archivos, CSV exporta a tu vault, y la flecha actualiza de inmediato.\n\nCada una de las cuatro filas de tokens de Today lleva un marcador compacto — un punto verde cuando el valor está cerca de tu media reciente, una flecha ámbar cuando es claramente más alto. La ventana de comparación sigue tu ajuste de retención de datos de Claude, no un número fijo de días.',
+      },
+      {
+        title: 'Calendario de actividad',
+        body:  'La página Calendario de la barra de iconos muestra los dos últimos meses uno debajo del otro. Dos en vez de uno, porque a principios de mes una sola cuadrícula mostraría apenas unos días útiles y ocultaría justo el arranque que se busca. Las flechas desplazan el par hacia atrás, hasta donde llegue el archivo; el calendario nunca va al futuro.\n\nCada día pasado lleva un punto de color ponderado respecto a tu media diaria reciente: verde por debajo, ámbar alrededor, rojo en un pico (2× o más). Los días sin actividad no tienen punto. Un clic en un día añade una nota privada — se guarda en los ajustes del plugin, nunca en tus datos de sesión.',
+      },
+      {
+        title: 'Modelos',
+        body:  'Haiku, Sonnet, Opus y Fable tienen precios muy distintos. La barra de modelos muestra qué parte de tus tokens de los últimos 7 días corresponde a cada uno. Si Opus domina el gráfico, ahí está la mayor parte de tu gasto.',
+      },
+      {
+        title: 'Sesiones',
+        body:  'Cada sesión de un proyecto de Claude Code tiene un ID único. Una sesión = un contexto de conversación continuo. La tabla de sesiones principales del panel ordena las sesiones por volumen total de tokens dentro de tu ventana de lectura configurada (30 días por defecto).',
+      },
+      {
+        title: 'Control de uso por vault y proyecto',
+        body:  'Claude Code registra en cada petición el directorio de trabajo desde el que se ejecutó. A partir de ahí, el plugin agrupa el uso por vault y por subproyecto — útil para facturar a varios clientes o para ver qué área de trabajo consume realmente tu presupuesto.\n\nEl panel muestra la vista por vault; la exportación Markdown separada añade el detalle por subproyecto.',
+      },
+      {
+        title: 'Detalle de subproyectos',
+        body:  'Dentro de un vault, el plugin distingue además las subcarpetas desde las que se ejecutaron las peticiones. La casilla del panel controla solo la legibilidad en pantalla — las exportaciones CSV y Markdown incluyen siempre el detalle completo.',
+      },
+      {
+        title: 'Qué se mide',
+        body:  'Este plugin lee lo que Claude Code escribe en disco, así que cubre todas las formas de usar Claude Code: en una terminal, dentro de Obsidian, en un editor como VS Code y el modo agente integrado en la aplicación de escritorio de Claude. Todo acaba en los mismos números.\n\nLo que no puede mostrar es el chat normal — las conversaciones en la aplicación de escritorio de Claude o en claude.ai. Esas nunca escriben recuentos de tokens en tu máquina; la única señal de uso disponible allí es un porcentaje redondeado de tu límite actual, no los recuentos reales sobre los que se construye este plugin.\n\nAsí que si un día parece más intenso de lo que sugieren las cifras, esa suele ser la razón: tu uso del chat cuenta para el mismo límite del plan, pero no deja rastro local que medir. Conviene tenerlo en cuenta sobre todo para las estimaciones de límites, que solo pueden derivarse de la parte visible aquí.',
+      },
+      {
+        title: 'Archivo y datos a largo plazo',
+        body:  'Claude Code borra sus propios archivos de sesión automáticamente — 30 días por defecto, o lo que configures en cleanupPeriodDays en Ajustes. Sin una copia en otro sitio, todo lo anterior se pierde definitivamente.\n\nEl archivo resuelve esto: cada día que usas Claude Code, el plugin escribe un pequeño archivo de resumen en Token Usage Archive/ dentro de tu vault — solo totales agregados, nunca tus conversaciones. Cada vez que abres Obsidian, revisa todos los días todavía disponibles y rellena los que aún no tienen archivo, incluidos los huecos por haber estado cerrado un tiempo.\n\nEl límite honesto: el archivo solo puede guardar lo que todavía existe en el momento en que abres la aplicación. Si Obsidian permanece cerrado más tiempo que tu periodo de retención, los días intermedios desaparecen antes de que el plugin llegue a verlos — no hay forma de evitarlo sin ejecutarse de forma continua. Aumenta la retención (Ajustes → Retención de datos de Claude) si abres Obsidian menos de una vez al día, para darle un margen más amplio.',
+      },
+      {
+        title: 'Resumen de costes (aproximado, USD)',
+        body:  'Entrada:        ~3 $ / 1 M de tokens (Sonnet)\nSalida:         ~15 $ / 1 M de tokens\nC.Escritura:    ~3,75 $ / 1 M de tokens (+25 %)\nC.Lectura:      ~0,30 $ / 1 M de tokens (−90 %)\n\nEl precio real depende de tu plan y del modelo. Estas cifras muestran por qué un factor de reutilización alto reduce los costes de forma notable.\n\nCoste y límites son dos cosas distintas: los tokens de caché cuestan dinero pero no te acercan al límite de 5 horas ni al semanal — ver «Qué cuenta para un límite».',
       },
     ],
   },
@@ -789,36 +1193,145 @@ const STRINGS = {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function intensityColor(ratio, isToday) {
-  let r, g, b;
-  if (ratio <= 0) { r = 70; g = 70; b = 70; }
-  else if (ratio < 0.5) {
-    const t = ratio * 2;
-    r = Math.round(82  + (245 - 82)  * t);
-    g = Math.round(183 + (158 - 183) * t);
-    b = Math.round(136 + (11  - 136) * t);
-  } else {
-    const t = (ratio - 0.5) * 2;
-    r = Math.round(245 + (229 - 245) * t);
-    g = Math.round(158 + (80  - 158) * t);
-    b = Math.round(11  + (80  - 11)  * t);
-  }
-  return `rgba(${r},${g},${b},${isToday ? 1.0 : 0.60})`;
+// intensityColor() removed in v2.0 — its only caller was the Classic bar chart, which is gone.
+// The dashboard's twin (intensityColorJs) went the same way once the billing-week bar stopped
+// colouring by relative height. heatBandColor() followed on 01.10.2026 with the 4h-block heatmap
+// it coloured, and dayHeatBand() on 02.10.2026 with the 30-day grid, when Björn had that removed
+// from Analytics. The one surviving heatmap is the weekly 2h grid on Today; its bands live in
+// slotHeatBand()/slotShade() and measure against the session-limit estimate, not a daily average.
+
+// Compact progress ring for the sidebar (v2.0). The dashboard has its own ringSvg() inside the
+// template literal; this is the Obsidian-side twin, deliberately a separate small function
+// rather than a shared one — the two live in different worlds (Node-side DOM vs. browser
+// template string) and the dashboard's version carries a glow filter this one does not need at
+// 44px. Colour comes in as a CSS variable so the ring follows the theme like everything else.
+function auRingSvg(pct, cssColor, size) {
+  const s = size || 44;
+  const stroke = 4.5;
+  const r = (s - stroke) / 2 - 1;
+  const c = 2 * Math.PI * r;
+  const dash = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  const mid = s / 2;
+  return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="display:block">`
+    + `<circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="var(--background-modifier-border)" stroke-width="${stroke}"/>`
+    + `<circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="${cssColor}" stroke-width="${stroke}"`
+    + ` stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" stroke-linecap="round"`
+    + ` transform="rotate(-90 ${mid} ${mid})"/>`
+    + `<text x="${mid}" y="${mid + 3.6}" text-anchor="middle" font-size="11" font-weight="700"`
+    + ` fill="var(--text-normal)">${Math.round(pct)}<tspan font-size="7.5">%</tspan></text>`
+    + `</svg>`;
 }
 
-// Fixed 4-band heatmap coloring (Empty/Low/Medium/High) — deliberately NOT intensityColor()'s
-// continuous gradient; flat categorical banding matching the 4-swatch legend (Nachschärfungsliste
-// Punkt 5, 01.09.2026; palette revised 01.09.2026 — Björn: purple/blue collided visually with the
-// Sonnet/Opus model colors used elsewhere in the sidebar, e.g. the "Models (last 7 days)" bar).
-// Gray/green/amber/red instead — reuses the existing --au-* palette, doubles as a genuine
-// traffic-light "cold to hot" read, and gives "no activity" its own real color instead of the
-// previous opacity-only trick (empty and low used to share --au-gray, distinguished only by
-// dimming).
-function heatBandColor(ratio) {
-  if (ratio <= 0)    return { css: 'var(--au-gray)',  band: 'empty'  };
-  if (ratio >= 0.66) return { css: 'var(--au-red)',   band: 'high'   };
-  if (ratio >= 0.33) return { css: 'var(--au-amber)', band: 'medium' };
-  return                { css: 'var(--au-green)', band: 'low'    };
+// Note on the heatmap colours, kept because it still governs the surviving weekly grid: the four
+// active steps form an ordinal ramp (cold to hot), read by position in the sequence rather than
+// identified in isolation — so they may sit closer together than the three-colour traffic light,
+// where each colour has to be recognisable on its own.
+const FIVE_H = 5 * 3_600_000;
+
+// ── CSV, Node side (02.10.2026) ──────────────────────────────────────────────────────────
+// Deliberate twins of csvCell()/csvFrom() inside the dashboard template literal, not shared
+// with them — same reasoning as sparklineSvgNG vs sparklineSvg. The dashboard pair lives in a
+// template string where every backslash needs doubling; these do not, and keeping them apart
+// means neither has to carry the other's escaping rules.
+//
+// RFC 4180: quote a field only when it contains a quote, a comma or a line break, and escape
+// an inner quote by doubling it.
+function csvCellNode(v) {
+  if (v === null || v === undefined) return '';
+  const s = String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function csvFromNode(rows) {
+  return rows.map(r => r.map(csvCellNode).join(',')).join('\r\n');
+}
+// Byte-order mark, so Excel reads the file as UTF-8 — vault and folder names routinely carry
+// umlauts, which become mojibake without it.
+const CSV_BOM = '﻿';
+function csvIsoNode(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return [d.getFullYear(), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0')].join('-');
+}
+
+// Reconstructs Anthropic's anchored 5-hour windows from activity (02.10.2026).
+// A window opens with the first entry that is not already inside an open window, and runs
+// exactly five hours. Returns every window in the given entries, oldest first.
+// `entries` may be in any order — it is sorted here rather than at every call site.
+function windows5h(entries) {
+  const asc = (entries || []).slice().sort((a, b) => a.timestamp - b.timestamp);
+  const out = [];
+  let cur = null;
+  for (const e of asc) {
+    if (!cur || e.timestamp >= cur.end) {
+      cur = { start: e.timestamp, end: e.timestamp + FIVE_H, tokens: 0, count: 0 };
+      out.push(cur);
+    }
+    cur.tokens += billedEntry(e);
+    cur.count++;
+  }
+  return out;
+}
+
+// The window that is open right now, or null if the last one has already expired.
+function currentWindow5h(entries, now) {
+  const all = windows5h(entries);
+  const last = all[all.length - 1];
+  return (last && now < last.end) ? last : null;
+}
+
+// Band for a 5h window against the observed session limit (02.10.2026). Different edges from
+// dayHeatBand on purpose: there, 1x is an ordinary day and 2x is a spike. Here, 1x means the
+// window hit the wall and work stopped — so the top band has to arrive at 100%, not at 200%.
+function windowHeatBand(ratio) {
+  if (ratio <= 0)  return 'empty';
+  if (ratio < 0.5) return 'low';
+  if (ratio < 0.8) return 'medium';
+  if (ratio < 1)   return 'high';
+  return             'veryhigh';
+}
+
+// Band for one 2-hour slot (02.10.2026, Björn's bubble grid).
+//
+// The thresholds are derived, not picked. A 5-hour window holds 2.5 slots of two hours, so
+// spending the whole window budget at an even pace means 40% of it per slot — that is the pace
+// at which you arrive exactly at the wall as the window closes. Call that "full burn" and the
+// bands fall out of it: a quarter of that pace, half of it, up to it, and beyond it.
+//
+// This matters because the obvious alternative — colouring each slot relative to the busiest
+// slot of the week — would make the busiest slot red every week, including a quiet one. Same
+// trap as the week bar on 01.10.: relative height wearing traffic-light colours.
+const SLOT_FULL_BURN = 0.40; // share of a 5h budget spent in one 2h slot at an even full burn
+
+const SLOT_EDGES = [0.25, 0.5, 1];
+
+function slotHeatBand(slotTokens, sessionLimit) {
+  if (slotTokens <= 0 || !sessionLimit) return slotTokens > 0 ? 'low' : 'empty';
+  const pace = slotTokens / (sessionLimit * SLOT_FULL_BURN);
+  if (pace < SLOT_EDGES[0]) return 'low';
+  if (pace < SLOT_EDGES[1]) return 'medium';
+  if (pace < SLOT_EDGES[2]) return 'high';
+  return                      'veryhigh';
+}
+
+// Shading INSIDE a band (02.10.2026, Björn: the mockup varies the tones within each colour).
+// Returns 0.70–1.00: where the value sits between its band's own edges. The band still carries
+// the meaning and is the thing the legend names; the shade adds resolution within it, which
+// matters because a band is a wide bucket — two cells both called "high" can be 1.6x apart.
+//
+// Safe to add because it is monotonic and never crosses a band edge: more tokens always means
+// more solid, and no shade of one band can be mistaken for another band. It would NOT be safe to
+// map the shade to "share of the busiest cell this week", which is the relative-height trap the
+// week bar fell into on 01.10.
+function slotShade(slotTokens, sessionLimit) {
+  if (slotTokens <= 0 || !sessionLimit) return 1;
+  const pace = slotTokens / (sessionLimit * SLOT_FULL_BURN);
+  const lo = pace < SLOT_EDGES[0] ? 0 : pace < SLOT_EDGES[1] ? SLOT_EDGES[0]
+           : pace < SLOT_EDGES[2] ? SLOT_EDGES[1] : SLOT_EDGES[2];
+  // The top band is open-ended; one further full-burn unit above the edge counts as its maximum.
+  const hi = pace < SLOT_EDGES[0] ? SLOT_EDGES[0] : pace < SLOT_EDGES[1] ? SLOT_EDGES[1]
+           : pace < SLOT_EDGES[2] ? SLOT_EDGES[2] : SLOT_EDGES[2] + 1;
+  const k = Math.max(0, Math.min(1, (pace - lo) / (hi - lo)));
+  return 0.70 + 0.30 * k;
 }
 
 // Overview tiles — KPI-card style (Björn, 01.09.2026, Nachschärfungsliste Punkt 6, scoped down to
@@ -861,6 +1374,26 @@ function fmtTokens(n) {
   return String(n);
 }
 
+// Soft word-wrap for plain-text tooltips (native `title` attributes do not wrap on their
+// own): breaks the input into lines of at most maxLen chars, breaking on word boundaries
+// where possible so a long day-note doesn't render as one unstructured line (Björn, 24.09.2026).
+function wrapText(str, maxLen) {
+  const words = String(str).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const candidate = line ? line + ' ' + word : word;
+    if (candidate.length > maxLen && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join('\n');
+}
+
 function fmtDuration(ms) {
   if (ms <= 0) return '0m';
   const h = Math.floor(ms / 3_600_000);
@@ -878,21 +1411,86 @@ function daysAgoTs(n) {
 // (month names, weekday headers in the NextGen calendar). Everything else in the plugin
 // still formats with a fixed 'en-GB' on purpose — only the calendar is user-language-aware.
 function localeFor(lang) {
-  return { en: 'en-GB', de: 'de-DE', fr: 'fr-FR', it: 'it-IT' }[lang] || 'en-GB';
+  return { en: 'en-GB', de: 'de-DE', fr: 'fr-FR', it: 'it-IT', es: 'es-ES' }[lang] || 'en-GB';
 }
 
-// Billing week starts Sunday 18:00 CEST = 16:00 UTC. Module-level (Phase 0 of the UI relaunch —
-// previously a closure inside _buildDashboard()) because both the rate-limit analysis and the
-// new Week Status Bar need it.
+// When the weekly cap resets. Set by calibration (v2.0) — read from the plugin settings into
+// these module-level values on load and on every settings change.
+//
+// Until 2.0 this was hard-wired to Sunday 16:00 UTC, which is Björn's own reset. That is NOT
+// universal: Anthropic assigns the weekly reset per account, and `/usage` in Claude Code
+// reports each user's own moment (Björn, 01.10.2026). Every user whose reset falls elsewhere
+// was silently getting a billing-week bar, a forecast and a "resets in" countdown built on
+// someone else's schedule — wrong without ever looking broken.
+//
+// Stored and computed in LOCAL time, because that is what `/usage` shows the user. A fixed UTC
+// instant would drift against the displayed clock across daylight saving; keeping it local
+// means what the user typed is what they see. If Anthropic's reset is UTC-fixed, the hour will
+// appear to shift by one after a DST change — which is exactly when the calibration hint
+// ("checked on …") should prompt a re-check.
+let _resetDay  = 0;   // 0 = Sunday … 6 = Saturday
+let _resetHour = 18;  // local hour, 0–23
+
+function setBillingWeekReset(day, hour) {
+  _resetDay  = (typeof day  === 'number' && day  >= 0 && day  <= 6)  ? day  : 0;
+  _resetHour = (typeof hour === 'number' && hour >= 0 && hour <= 23) ? hour : 18;
+}
+
+const _RESET_MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+
+// Reads the weekly reset straight out of a weekly-limit message, so the plugin calibrates
+// itself (v2.0). Claude Code writes the moment in plain text when the cap is hit:
+//
+//   "You've hit your weekly limit · resets 6pm (Europe/Berlin)"
+//   "You've hit your weekly limit · resets Aug 30, 6pm (Europe/Berlin)"
+//
+// That makes a manual /usage lookup unnecessary for anyone who has ever hit the weekly cap —
+// the information was already in data the plugin parses anyway, it just was not being read.
+// Verified against Björn's four recorded weekly hits (01.10.2026): all four resolve to Sunday
+// 18:00, including a Saturday 23:56 hit whose bare "6pm" has to roll forward to Sunday.
+//
+// The timezone is captured but NOT used for conversion: the message already states the moment
+// in the user's own zone, which is the zone the rest of this calculation works in. The old
+// pattern hard-coded "(Europe/Berlin)" and therefore silently failed for every user elsewhere.
+function parseWeeklyReset(text, eventTs) {
+  const m = String(text || '').match(/resets\s+(.+?)\s*\(([^)]+)\)/i);
+  if (!m) return null;
+  const when = m[1].trim();
+
+  const hm = when.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+  if (!hm) return null;
+  let hour = parseInt(hm[1], 10);
+  const ap = hm[3].toLowerCase();
+  if (ap === 'pm' && hour !== 12) hour += 12;
+  if (ap === 'am' && hour === 12) hour = 0;
+
+  const dm = when.match(/^([A-Za-z]{3})\s+(\d{1,2})/);
+  let reset;
+  if (dm) {
+    const mo = _RESET_MONTHS.indexOf(dm[1].toLowerCase());
+    if (mo < 0) return null;
+    reset = new Date(new Date(eventTs).getFullYear(), mo, parseInt(dm[2], 10), hour, 0, 0, 0);
+  } else {
+    // Bare time, no date: the reset is the next occurrence of that hour. A hit late on
+    // Saturday saying "6pm" means Sunday 18:00, not the Saturday that has already passed.
+    const at = new Date(eventTs);
+    reset = new Date(at);
+    reset.setHours(hour, 0, 0, 0);
+    if (reset <= at) reset.setDate(reset.getDate() + 1);
+  }
+  return { day: reset.getDay(), hour, tz: m[2].trim(), at: reset.getTime() };
+}
+
 function billingWeekStart(tsMs) {
   const dt = new Date(tsMs);
-  let dow  = dt.getUTCDay(); // 0=Sun
-  const h  = dt.getUTCHours();
-  let dBack = dow;
-  if (dow === 0 && h < 16) dBack = 7;
+  // How many days back to the most recent reset weekday.
+  let dBack = (dt.getDay() - _resetDay + 7) % 7;
+  // Standing exactly on the reset day but before the reset hour means the current week began
+  // a full seven days earlier.
+  if (dBack === 0 && dt.getHours() < _resetHour) dBack = 7;
   const s = new Date(dt);
-  s.setUTCDate(dt.getUTCDate() - dBack);
-  s.setUTCHours(16, 0, 0, 0);
+  s.setDate(dt.getDate() - dBack);
+  s.setHours(_resetHour, 0, 0, 0);
   return s.getTime();
 }
 
@@ -922,11 +1520,74 @@ function computeFocusScore(sessMap, reuseRatio, activeDays, totalReqs) {
   const depth              = Math.max(0, Math.min(100, (avgReqsPerSession / 20) * 100));
   const score = Math.round(0.5 * cache + 0.3 * continuity + 0.2 * depth);
   const badge = score >= 80 ? 'Deep Work Mode' : score >= 60 ? 'Focused' : score >= 40 ? 'Balanced' : 'Scattered';
-  const color = score >= 80 ? '#52B788' : score >= 60 ? '#4A90D9' : score >= 40 ? '#F59E0B' : '#6B7280';
+  // Status role (v2.0): the focus score is a verdict, so it wears the status palette, never a
+  // token-type colour — the old scale mixed both (green, then the Input blue, then amber).
+  // Four distinct steps for four distinct badges. The bottom step stays grey rather than red:
+  // "Scattered" is less focus, not a problem to fix, and red would overstate it.
+  const color = score >= 80 ? '#0CA30C' : score >= 60 ? '#FAB219' : score >= 40 ? '#EC835A' : '#6B7280';
   return {
     score, badge, color,
     components: { cache: Math.round(cache), continuity: Math.round(continuity), depth: Math.round(depth) },
   };
+}
+
+// ── Limit currency (01.10.2026, corrected by measurement 02.10.2026) ─────────────────────
+// Every figure that is compared against a rate limit runs through here, so the currency is
+// defined once instead of in nineteen scattered sums. That single chokepoint is the lasting
+// part of this; the weights themselves took a wrong turn first and are worth recording.
+//
+// First attempt weighted cache tokens by Anthropic's PRICE ratios (write 1.25x, read 0.10x) on
+// the assumption that the rate limit is measured in the same currency as the bill. Björn did
+// not believe the resulting numbers — two requests were being reported as ~2M tokens — and he
+// was right. The assumption was never tested, although the data to test it was already there.
+//
+// The test: take every deduplicated session-limit hit (81 of them across Björn's whole history —
+// the plugin's own estimate counts fewer, because it only looks back as far as the retention
+// window. That is why a hard-coded count must never appear in the UI: it cannot agree with the
+// live figure for long, and for a few hours on 02.10. it visibly did not),
+// reconstruct the anchored 5h window it happened in, and total that window in each candidate
+// currency. The currency Anthropic actually enforces must give the MOST CONSISTENT total at the
+// moment the wall is hit — so the one with the lowest coefficient of variation wins.
+//
+//   input + output          median  308 K   CV 0.464   <- winner
+//   weighted 1.25 / 0.10    median 7.22 M   CV 0.726
+//   raw, everything         median 38.3 M   CV 0.797
+//   input + output + write  median 2.03 M   CV 0.949
+//
+// A grid search over both weights (0…2.0 for write, 0…0.5 for read) landed on exactly 0.00 and
+// 0.00. Cache tokens do not count toward the 5-hour limit at all in this data, and 308 K matches
+// the figure Björn remembered from the earlier analysis.
+//
+// So the weights are zero — kept as named constants rather than deleted, because they are an
+// empirical result that could change if Anthropic changes its accounting. Re-run the test
+// (Design/Waehrungstest.js) before touching them.
+//
+// Note this is the LIMIT currency, not a usage total. Cache volume is real and is shown in full
+// in the per-type rows (Input / Output / C.Write / C.Read) — it just does not move you toward
+// the wall, so it must not appear in a figure that claims to say how close the wall is.
+const W_CACHE_WRITE = 0;
+const W_CACHE_READ  = 0;
+
+// For an aggregate/day object ({ input, output, cacheCreate, cacheRead }).
+function billedOf(a) {
+  if (!a) return 0;
+  return Math.round(
+      (a.input  || 0)
+    + (a.output || 0)
+    + (a.cacheCreate || 0) * W_CACHE_WRITE
+    + (a.cacheRead   || 0) * W_CACHE_READ
+  );
+}
+
+// For a single raw JSONL entry. Same formula, different field names — deliberately not
+// routed through billedOf() via a temporary object, because this one runs inside hot
+// reduce() loops over tens of thousands of entries.
+function billedEntry(e) {
+  const u = (e && e.usage) || {};
+  return (u.input_tokens  || 0)
+       + (u.output_tokens || 0)
+       + (u.cache_creation_input_tokens || 0) * W_CACHE_WRITE
+       + (u.cache_read_input_tokens     || 0) * W_CACHE_READ;
 }
 
 // Rate-limit estimates (extracted 14.09.2026 from what used to be inline-only in
@@ -934,8 +1595,9 @@ function computeFocusScore(sessMap, reuseRatio, activeDays, totalReqs) {
 // sessionEst/weeklyLimitEst numbers as the Dashboard's Limit Hero — one source of truth, the two
 // can never drift apart). Dedupes raw rate-limit events (weekly: max 1 per billing week; session:
 // 15-min window, since parallel sessions can fire within seconds of each other — oldest kept as
-// the causal one each time), then derives the session-limit estimate (min/max/median of observed
-// 5h-window totals at session-limit hits) and the weekly-limit estimate (lowest observed
+// the causal one each time), then derives the session-limit estimate (min/max/median of the
+// anchored 5h-window totals, measured from the window's opening up to each session-limit hit)
+// and the weekly-limit estimate (lowest observed
 // billing-week total among weeks that actually hit the weekly limit — a conservative lower bound).
 function computeRateLimitEstimates(rateLimitEvents, entries30sorted, now) {
   const rlRaw = (rateLimitEvents || []).slice().sort((a, b) => a.timestamp - b.timestamp);
@@ -950,26 +1612,60 @@ function computeRateLimitEstimates(rateLimitEvents, entries30sorted, now) {
       if (ev.timestamp - lastSessionTs > 15 * 60_000) { rlDeduped.push(ev); lastSessionTs = ev.timestamp; }
     }
   }
+  // Anchored, not sliding (04.10.2026, Björn). Each hit is measured inside the real 5-hour
+  // window it happened in: from the moment that window opened up to the hit. This used to look
+  // back a flat five hours from the hit, which is the same mistake the gauge had until 02.10.:
+  // whenever the previous window had only just closed, the look-back dragged its tail into the
+  // sum. On Björn's own data that inflated the median from 290.2K to 341.5K (24 of 85 hits
+  // differed by more than 10%), so the ring compared an anchored numerator against an inflated
+  // denominator and read about 18% too low. Gauge and estimate must be measured the same way.
+  const wins = windows5h(entries30sorted);
+  const HIT_SLACK = 10 * 60_000; // a hit is stamped a little after the last response of its window
+  const windowOfHit = (ts) => {
+    for (let i = wins.length - 1; i >= 0; i--) {
+      if (wins[i].start <= ts) return ts <= wins[i].end + HIT_SLACK ? wins[i] : null;
+    }
+    return null;
+  };
   const rlEvents = rlDeduped.map(ev => {
-    const wStart = ev.timestamp - 5 * 3_600_000;
-    const tok5h  = entries30sorted
-      .filter(e => e.timestamp >= wStart && e.timestamp <= ev.timestamp)
-      .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+    const w     = windowOfHit(ev.timestamp);
+    // No window found means the hit has no activity behind it inside the retained data
+    // (e.g. its window opened before the retention cut-off). Counting it as 0 drops it from the
+    // estimate through the > 50K filter below, which is the honest outcome: no data, no vote.
+    const tok5h = w
+      ? entries30sorted
+          .filter(e => e.timestamp >= w.start && e.timestamp <= ev.timestamp)
+          .reduce((s, e) => s + billedEntry(e), 0)
+      : 0;
     let tokWeek = 0;
     if (ev.type === 'weekly') {
       const wkStart = billingWeekStart(ev.timestamp);
       tokWeek = entries30sorted
         .filter(e => e.timestamp >= wkStart && e.timestamp <= ev.timestamp)
-        .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+        .reduce((s, e) => s + billedEntry(e), 0);
     }
     return Object.assign({}, ev, { tok5h, tokWeek });
   });
   const sessHits = rlEvents.filter(r => r.type === 'session' && r.tok5h > 50_000);
+  // Usual band (Björn, 04.10.2026): the middle half of the hits (25th to 75th percentile, the quartiles).
+  // One number suggests a precision the data does not have: the same limit is reached at quite
+  // different token totals, because the true budget also depends on model mix and server load.
+  // Min and max would be the wrong band, since a single odd hit drags either end far out.
+  // Needs a handful of hits to mean anything, so below 5 the band stays null and the UI falls
+  // back to the single figure.
+  const hitsSorted = sessHits.map(r => r.tok5h).sort((a, b) => a - b);
+  const percentile = (p) => {
+    const pos = (hitsSorted.length - 1) * p;
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return hitsSorted[lo] + (hitsSorted[hi] - hitsSorted[lo]) * (pos - lo);
+  };
   const sessionEst = sessHits.length > 0 ? {
     n:      sessHits.length,
-    min:    Math.min.apply(null, sessHits.map(r => r.tok5h)),
-    max:    Math.max.apply(null, sessHits.map(r => r.tok5h)),
-    median: sessHits.map(r => r.tok5h).sort((a, b) => a - b)[Math.floor(sessHits.length / 2)],
+    min:    hitsSorted[0],
+    max:    hitsSorted[hitsSorted.length - 1],
+    median: hitsSorted[Math.floor(sessHits.length / 2)],
+    bandLow:  sessHits.length >= 5 ? Math.round(percentile(0.25)) : null,
+    bandHigh: sessHits.length >= 5 ? Math.round(percentile(0.75)) : null,
   } : null;
   const curWkStart = billingWeekStart(now.getTime());
   const weekBuckets = [];
@@ -978,7 +1674,7 @@ function computeRateLimitEstimates(rateLimitEvents, entries30sorted, now) {
     const wEnd   = wStart + 7 * 86_400_000;
     const wTok   = entries30sorted
       .filter(e => e.timestamp >= wStart && e.timestamp < wEnd)
-      .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+      .reduce((s, e) => s + billedEntry(e), 0);
     const hitWeekly = rlEvents.some(r => r.type === 'weekly' && r.timestamp >= wStart && r.timestamp < wEnd);
     const wLabel = new Date(wStart).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' })
       + '–' + new Date(wEnd - 86_400_000).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
@@ -1009,7 +1705,7 @@ function computeWeekStatus(entries30sorted, now, weeklyLimitEst, avgDailyFallbac
     const to   = from + 86_400_000;
     const tokens = entries30sorted
       .filter(e => e.timestamp >= from && e.timestamp < to)
-      .reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+      .reduce((s, e) => s + billedEntry(e), 0);
     const status = to <= nowMs ? 'past' : (from <= nowMs && nowMs < to ? 'current' : 'future');
     days.push({ tokens, status });
   }
@@ -1046,6 +1742,7 @@ function aggregate(entries) {
     r.cacheRead   += e.usage.cache_read_input_tokens     || 0;
     r.count++;
   }
+  r.billed = billedOf(r);
   return r;
 }
 
@@ -1058,39 +1755,9 @@ function groupByDay(entries, nDays) {
       label:   new Date(from).toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 2),
       date:    new Date(from).toLocaleDateString('en-GB'),
       isToday: i === 0,
-      total:   agg.input + agg.output,
+      total:   agg.billed,
       input:   agg.input,
       output:  agg.output,
-    });
-  }
-  return result;
-}
-
-// 7 days × N×blockHours-blocks bucketing for the NextGen heatmap (Nachschärfungsliste Punkt 5,
-// 01.09.2026) — same iteration shape as groupByDay(), just with a nested `blocks` array per day.
-function groupByBlocks(entries, nDays, blockHours) {
-  const blocksPerDay = 24 / blockHours;
-  const blockMs       = blockHours * 3_600_000;
-  const result = [];
-  for (let i = nDays - 1; i >= 0; i--) {
-    const dayFrom = daysAgoTs(i);
-    const blocks  = [];
-    for (let b = 0; b < blocksPerDay; b++) {
-      const from = dayFrom + b * blockMs;
-      const to   = from + blockMs;
-      const agg  = aggregate(entries.filter(e => e.timestamp >= from && e.timestamp < to));
-      const h0   = b * blockHours, h1 = h0 + blockHours;
-      blocks.push({
-        blockIndex: b,
-        total:      agg.input + agg.output,
-        rangeLabel: `${String(h0).padStart(2, '0')}–${String(h1).padStart(2, '0')}h`,
-      });
-    }
-    result.push({
-      label:   new Date(dayFrom).toLocaleDateString('en-GB', { weekday: 'short' }).slice(0, 2),
-      date:    new Date(dayFrom).toLocaleDateString('en-GB'),
-      isToday: i === 0,
-      blocks,
     });
   }
   return result;
@@ -1134,7 +1801,7 @@ function modelDistribution(entries) {
   for (const e of entries) {
     const f   = modelFamily(e.model);
     counts[f] = (counts[f] || 0) + 1;
-    tokens[f] = (tokens[f] || 0) + e.usage.input_tokens + e.usage.output_tokens;
+    tokens[f] = (tokens[f] || 0) + billedEntry(e);
   }
   const total = Object.values(counts).reduce((a, b) => a + b, 0);
   return Object.entries(counts)
@@ -1307,7 +1974,10 @@ function parseUsageFromFile(filePath, minTimestamp, fileSize) {
             if (obj.error === 'rate_limit') {
               const text = msg.content?.[0]?.text || '';
               const typ  = text.includes('weekly') ? 'weekly' : 'session';
-              const rm   = text.match(/resets\s+(.+?)\s*\(Europe\/Berlin\)/);
+              // Any timezone, not just Europe/Berlin (fixed 01.10.2026). The old pattern was
+              // hard-coded to one zone, so for every user outside it this field stayed empty —
+              // and with it the self-calibration below would never have fired.
+              const rm   = text.match(/resets\s+(.+?)\s*\([^)]+\)/);
               rateLimitEvents.push({
                 timestamp: ts,
                 sessionId: sid,
@@ -1402,9 +2072,8 @@ class AnthropicUsageView extends obsidian.ItemView {
     // Today, split back out as its own page — Björn wants room to grow this with more summary
     // info later). Archive dropped from the rail entirely for now (was a placeholder only).
     this._activePage = 'today';
-    // NextGen activity calendar (v1.8) — which month is on screen. Same "persists across
-    // rebuilds" pattern as _activePage; only read when sidebarMode === 'nextgen' AND
-    // settings.calendarVisible !== false. Starts on the current month.
+    // Activity calendar — which month is on screen. Same "persists across rebuilds" pattern
+    // as _activePage; only read while the Calendar page is open. Starts on the current month.
     const _cnow = new Date();
     this._calYear  = _cnow.getFullYear();
     this._calMonth = _cnow.getMonth(); // 0-11
@@ -1466,21 +2135,44 @@ class AnthropicUsageView extends obsidian.ItemView {
       }
       all.sort((a, b) => b.timestamp - a.timestamp);
 
+      // Self-calibration (v2.0): derive the weekly reset from the most recent weekly-limit
+      // message. Runs before anything week-shaped is computed below, so the corrected moment
+      // applies to this very refresh rather than only the next one.
+      // Only overwrites an automatic value, never a manual one — if the user has set the reset
+      // by hand, that is a deliberate statement and wins over our parsing.
+      this._autoCalibrateWeeklyReset(allRateLimitEvents);
+
       const d7       = all.filter(e => e.timestamp >= day7Ts);
-      const win5h    = all.filter(e => e.timestamp >= win5hTs);
+      // Anchored, not sliding (fix 02.10.2026, Björn). Anthropic's 5-hour window OPENS with the
+      // first message and runs exactly five hours. A new window only starts once that span has
+      // fully elapsed — windows5h() below checks `e.timestamp >= cur.end`, i.e. "has the current
+      // window's 5h run out", not "was there an idle gap". Corrected 04.10.2026 (Björn): earlier
+      // comments and UI text said "after an idle gap of 5h or more", which is not what the code
+      // checks and not what Björn's own data showed — a chain of continuous messages still gets
+      // a fresh window exactly 5h after the previous one opened, with zero idle time at the seam.
+      // It is not "the last five hours from now", and it is independent of the weekly reset:
+      // the weekly cap resetting does not also start a new 5-hour window.
+      //
+      // The old sliding filter produced a number belonging to no real window whenever a reset
+      // fell inside it. In Björn's own data, 30.09. had windows 18:02–23:02 and 23:02–04:02 — at
+      // 23:30 the sliding version summed 18:30–23:30, the tail of the old window plus the head
+      // of the new one. That is precisely the moment a user needs to see that their budget just
+      // reset, and it was the moment the figure was most wrong.
+      const curWin   = currentWindow5h(all, now);
+      const win5h    = curWin ? all.filter(e => e.timestamp >= curWin.start && e.timestamp < curWin.end) : [];
       const win5hAgg = aggregate(win5h);
-      // Detect if the 5h window just cleared: no current entries, but activity in the last 6h
+      // Window has expired (or never opened) but there was recent activity — the budget is fresh.
       const win6hTs      = now - 6 * 3_600_000;
-      const windowCleared = win5hAgg.count === 0 && all.some(e => e.timestamp >= win6hTs);
+      const windowCleared = !curWin && all.some(e => e.timestamp >= win6hTs);
 
       const sessionEntries = curId ? all.filter(e => e.sessionId === curId) : [];
 
       // Spike detection — compare today vs personal 29-day baseline (active days only)
       const todayAgg      = aggregate(all.filter(e => e.timestamp >= todayTs));
-      const todayTotal    = todayAgg.input + todayAgg.output;
+      const todayTotal    = todayAgg.billed;
       const past29        = all.filter(e => e.timestamp >= day30Ts && e.timestamp < todayTs);
       const activeDays    = new Set(past29.map(e => dayStart(new Date(e.timestamp)))).size;
-      const past29Total   = past29.reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+      const past29Total   = past29.reduce((s, e) => s + billedEntry(e), 0);
       const avgDaily      = activeDays > 0 ? past29Total / activeDays : 0;
       const spikeRatio    = (avgDaily > 0 && todayTotal > 0) ? Math.round(todayTotal / avgDaily * 10) / 10 : 0;
 
@@ -1489,7 +2181,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       // Punkt 6) — same 29-day baseline (avgDaily) reused, not a second baseline concept. Compares
       // this week's average tokens per active day against that same baseline.
       const d7ActiveDays  = new Set(d7.map(e => dayStart(new Date(e.timestamp)))).size;
-      const d7Total       = d7.reduce((s, e) => s + e.usage.input_tokens + e.usage.output_tokens, 0);
+      const d7Total       = d7.reduce((s, e) => s + billedEntry(e), 0);
       const d7AvgDaily    = d7ActiveDays > 0 ? d7Total / d7ActiveDays : 0;
       const spikeRatioWeek = (avgDaily > 0 && d7AvgDaily > 0) ? Math.round(d7AvgDaily / avgDaily * 10) / 10 : 0;
 
@@ -1537,11 +2229,15 @@ class AnthropicUsageView extends obsidian.ItemView {
         day30:      aggregate(all),
         retentionDays,
         chart7:     groupByDay(d7, 7),
-        heat7:      groupByBlocks(d7, 7, 4),     // NextGen heatmap only — Nachschärfungsliste Punkt 5
         window5h: {
           agg:     win5hAgg,
-          oldest:  win5h.length > 0 ? Math.min(...win5h.map(e => e.timestamp)) : null,
-          total:   win5hAgg.input + win5hAgg.output,
+          // The anchored window's own start and end, so the countdown below is the real reset
+          // moment rather than "five hours after the oldest entry that happens to still be
+          // inside a sliding window".
+          oldest:  curWin ? curWin.start : null,
+          start:   curWin ? curWin.start : null,
+          end:     curWin ? curWin.end   : null,
+          total:   win5hAgg.billed,
           cleared: windowCleared,
         },
         entries7:   d7,
@@ -1564,13 +2260,28 @@ class AnthropicUsageView extends obsidian.ItemView {
         // Rate-limit events: assistant/<synthetic> entries with error:"rate_limit".
         // Each entry: { timestamp, sessionId, type ('session'|'weekly'), message, reset }
         rateLimitEvents:   allRateLimitEvents,
-        // Sidebar Limit Pulse (v1.9) — today's total vs. a fair daily share of the estimated
+        // Sidebar Limit Pulse — today's total vs. the user's own average, and this billing
         // weekly limit, and this billing week's total vs. that same weekly-limit estimate.
         // weeklyLimitEst is null until at least one weekly-limit hit has ever been observed.
+        // Exposed to the sidebar as well since 02.10.2026 — it was computed here all along but
+        // only ever handed to the Dashboard, so the plugin-side CSV export would have written
+        // empty cells for forecast and week share without noticing.
+        weekStatus,
         weekPulse: {
           weeklyLimitEst: rlEst.weeklyLimitEst,
           weekSoFar:      weekStatus.soFar,
           remainingDays:  weekStatus.remainingDays,
+          sessionEst:     rlEst.sessionEst,
+          weeklyHits:     rlEst.weeklyHits,
+          totalSession:   rlEst.totalSession,
+          window5h:       win5hAgg.billed,
+          // The calendar day, deliberately (Björn, 01.10.2026: "alle heute am 01.10. verbrauchten
+          // Token"). This briefly used the current 24-hour slice of the billing week instead,
+          // which was right while the tile was compared against a fair daily share of the weekly
+          // limit — share and slice had to span the same hours. The share turned out to be
+          // invented and is gone; the tile compares against the user's own daily average now, so
+          // the honest span is the one the label promises: today.
+          todayTotal:     todayTotal,
         },
         updatedAt:  new Date(),
       };
@@ -1593,13 +2304,14 @@ class AnthropicUsageView extends obsidian.ItemView {
         cacheRead:   s.cacheRead   + (x.cacheRead || 0),
         count:       s.count       + (x.reqs || 0),
       }), { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, count: 0 });
+      this.data.day30.billed = billedOf(this.data.day30);
       // NextGen sidebar tiles (Phase 2 iteration) — active-day count + tokens/active-day for
       // the N-Days period, same "productive days, not calendar days" principle as the
       // Dashboard's summary cards (Björn, 24.08.2026). Computed here (not in render()) because
       // periodSeries is already in hand; render() shouldn't redo _buildDayRange() on every draw.
       this.data.day30ActiveDays = periodSeries.filter(x => x.reqs > 0).length;
       this.data.day30AvgPerActiveDay = this.data.day30ActiveDays > 0
-        ? Math.round((this.data.day30.input + this.data.day30.output) / this.data.day30ActiveDays)
+        ? Math.round(this.data.day30.billed / this.data.day30ActiveDays)
         : 0;
 
       if (files.length > 0 && files[0].path !== this._watchedFile) this._setupWatcher();
@@ -1610,42 +2322,68 @@ class AnthropicUsageView extends obsidian.ItemView {
     this.render();
   }
 
+  // Reads the weekly reset out of the newest weekly-limit message and stores it, unless the
+  // user has set it manually. Silent by design: nothing to confirm, nothing to click — the
+  // settings page shows afterwards that it was detected and from which hit.
+  _autoCalibrateWeeklyReset(events) {
+    const s = this.plugin.settings;
+
+    const weekly = (events || [])
+      .filter(e => e.type === 'weekly' && e.message)
+      .sort((a, b) => b.timestamp - a.timestamp);
+    if (weekly.length === 0) return;
+
+    const parsed = parseWeeklyReset(weekly[0].message, weekly[0].timestamp);
+    if (!parsed) return;
+
+    const sameAsStored = s.weeklyResetDay === parsed.day && s.weeklyResetHour === parsed.hour;
+
+    // A manual setting that the data contradicts stays untouched — the user had a reason, and
+    // one parsed message is not enough to overrule them. A manual setting the data *confirms*
+    // is a different case: the value no longer rests on a guess, so it gets relabelled as
+    // detected. Nothing the user chose changes, only where the plugin says the value comes from.
+    if (s.weeklyResetSource === 'manual' && !sameAsStored) return;
+
+    // Already detected and unchanged — nothing to write, no settings churn on every refresh.
+    if (sameAsStored && s.weeklyResetSource === 'auto') return;
+
+    s.weeklyResetDay    = parsed.day;
+    s.weeklyResetHour   = parsed.hour;
+    s.weeklyResetSource = 'auto';
+    s.weeklyResetSetAt  = new Date().toISOString();
+    s.weeklyResetFrom   = weekly[0].timestamp;  // which hit it came from, shown in settings
+    setBillingWeekReset(parsed.day, parsed.hour);
+    this.plugin.saveSettings();
+  }
+
   render() {
     const el = this.containerEl.children[1];
-    // Computed early (not just below with `content`) because the header's ⚙ button needs it —
-    // NextGen has its own working Settings entry in the rail now, so the header button is only
-    // needed in Classic, which has no rail at all.
-    const isNextGen = this.plugin.settings.sidebarMode === 'nextgen';
     // Preserve scroll position across the render() cycle (Björn, 03.09.2026) — refresh() calls
     // render() unconditionally every refreshSeconds (default 30s), and render() always empties
     // and rebuilds the whole tree. Without this, any mid-scroll read (most noticeably the
-    // NextGen inline Settings page, but any long list in either mode) gets yanked back to the
-    // top every 30 seconds. Captured BEFORE el.empty() below, from whichever element actually
-    // scrolls in the mode we were just in: Classic scrolls on `el` itself (.au-container
-    // overflow-y:auto); NextGen scrolls on `.au-content` inside the rail shell instead (`el`
-    // itself is overflow-y:hidden there, see .au-container.au-nextgen in styles.css) — and since
-    // the whole shell is torn down and rebuilt every render(), that's a brand-new element each
-    // time, not the same node whose scrollTop would simply persist on its own. Querying the OLD
-    // DOM against the NEW isNextGen value degrades safely if the sidebar mode was just switched
-    // (querySelector finds nothing / el.scrollTop is 0 in the mode it wasn't scrolling in) —
-    // that just means "start at the top," which is the right behavior for a genuine mode switch.
-    const prevScrollEl = isNextGen ? el.querySelector('.au-content') : el;
+    // inline Settings page) gets yanked back to the top every 30 seconds. Captured BEFORE
+    // el.empty() below, from `.au-content` inside the rail shell (`el` itself is
+    // overflow-y:hidden, see .au-container.au-nextgen in styles.css) — and since the whole
+    // shell is torn down and rebuilt every render(), that's a brand-new element each time, not
+    // the same node whose scrollTop would simply persist on its own.
+    const prevScrollEl = el.querySelector('.au-content');
     const savedScroll   = prevScrollEl ? prevScrollEl.scrollTop : 0;
 
     el.empty();
     el.addClass('au-container');
-    // Explicit toggle (not just addClass) — el.empty() clears children but not the element's
-    // own classes, so switching back to Classic must actively remove this or it would linger
-    // (Björn, 29.08.2026 — this class is what fixes the permanent-scrollbar bug, see styles.css
-    // .au-container.au-nextgen).
-    el.toggleClass('au-nextgen', isNextGen);
+    // Kept as a class rather than folded into .au-container (v2.0) — styles.css still keys the
+    // rail shell's layout off it, and collapsing the two is a styling cleanup, not part of
+    // removing the Classic render path.
+    el.addClass('au-nextgen');
 
     // ── Header (always present)
     const hdr = el.createEl('div', { cls: 'au-header' });
 
     // Logo
     const logoEl = hdr.createEl('div', { cls: 'au-logo' });
-    logoEl.innerHTML = LOGO_SVG + '<span class="au-logo-text">Token Usage</span>';
+    // "Usage" set apart in the brand yellow, matching the logo lockup (Björn, 30.09.2026).
+    // A proper name, not a verdict — hence the one place a status hue is allowed outside its role.
+    logoEl.innerHTML = LOGO_SVG + '<span class="au-logo-text">Token <span class="au-logo-accent">Usage</span></span>';
 
     // Button group
     const btnWrap = hdr.createEl('div', { cls: 'au-header-btns' });
@@ -1658,19 +2396,38 @@ class AnthropicUsageView extends obsidian.ItemView {
     reportBtn.title   = 'Create Markdown report in vault and open it';
     reportBtn.onclick = () => this._generateReport();
 
+    // CSV sits next to Dashboard and Report because it is the same kind of action — all three
+    // produce a file. Added 02.10.2026 after Björn's verdict on the command-palette-only
+    // version: "schön, selbsterklärend und einfach ist das nicht". A feature reachable only by
+    // typing its name into a palette is a feature most users never find.
+    //
+    // The menu names its own destination in its first, non-clickable line, so you can see where
+    // the files go BEFORE you click — rather than finding out afterwards by searching for them,
+    // which is exactly what happened with the Dashboard's browser downloads.
+    const csvBtn = btnWrap.createEl('button', { cls: 'au-csv-btn', text: 'CSV' });
+    csvBtn.title = t('csvBtnTitle');
+    csvBtn.onclick = (evt) => {
+      const folder = this.plugin.settings.csvPath || 'Token Usage Exports';
+      const menu = new obsidian.Menu();
+      menu.addItem(i => i.setTitle(t('csvMenuTarget', folder)).setDisabled(true));
+      menu.addSeparator();
+      for (const [key, label] of [
+        ['all',      t('csvMenuAll')],
+        ['projects', t('csvMenuProjects')],
+        ['daily',    t('csvMenuDaily')],
+        ['kpis',     t('csvMenuKpis')],
+      ]) {
+        menu.addItem(i => i.setTitle(label).setIcon('download').onClick(() => this._exportCsv(key)));
+      }
+      menu.showAtMouseEvent(evt);
+    };
+
     const refreshBtn = btnWrap.createEl('button', { cls: 'au-refresh-btn', text: '↻' });
     refreshBtn.title   = 'Refresh now';
     refreshBtn.onclick = () => this.refresh();
 
-    // Classic-only (Björn, 29.08.2026): NextGen's rail has its own working Settings icon now
-    // (opens the same Obsidian settings tab), so this header button would just be a redundant
-    // second entry point there. Classic has no rail, so it still needs this button.
-    if (!isNextGen) {
-      const settingsBtn = btnWrap.createEl('button', { cls: 'au-settings-btn', text: '⚙' });
-      settingsBtn.title   = 'Plugin settings';
-      settingsBtn.onclick = () => { this.app.setting.open(); this.app.setting.openTabById('token-usage'); };
-    }
-
+    // No ⚙ button here (v2.0): the rail has its own Settings icon, so a header button would
+    // just be a redundant second entry point to the same page.
     const helpBtn = btnWrap.createEl('button', {
       cls:  'au-help-btn' + (this.helpVisible ? ' au-help-active' : ''),
       text: '?',
@@ -1684,21 +2441,16 @@ class AnthropicUsageView extends obsidian.ItemView {
       backBtn.onclick = () => { this.helpVisible = false; this.render(); };
     }
 
-    // ── NextGen shell: left icon rail + content area (UI relaunch v2, Phase A). Classic never
-    // creates .au-shell — `content` is simply `el`, so every call below is byte-for-byte the
-    // same code path Classic has always used. See _renderRail()/_renderNextGenPages().
-    let content = el;
-    if (isNextGen) {
-      const shell = el.createEl('div', { cls: 'au-shell' });
-      this._renderRail(shell);
-      content = shell.createEl('div', { cls: 'au-content' });
-    }
+    // ── Shell: left icon rail + content area. See _renderRail()/_renderPages().
+    const shell = el.createEl('div', { cls: 'au-shell' });
+    this._renderRail(shell);
+    const content = shell.createEl('div', { cls: 'au-content' });
     // Restoring `content.scrollTop` right here (synchronously) would be clamped straight back to
     // 0 — the element has no children yet, so its scrollHeight is 0. Every branch below finishes
     // populating `content` (or a container inside it) synchronously before render() returns, so a
     // single rAF callback scheduled here — after all of them, before the next paint — covers
-    // every return path (help mode, loading state, NextGen pages, Classic body) without having to
-    // duplicate the restore call at each one.
+    // every return path (help mode, loading state, rail pages) without having to duplicate the
+    // restore call at each one.
     if (savedScroll > 0) {
       requestAnimationFrame(() => { content.scrollTop = savedScroll; });
     }
@@ -1712,90 +2464,20 @@ class AnthropicUsageView extends obsidian.ItemView {
     if (!this.data) { content.createEl('div', { cls: 'au-loading', text: t('loading') }); return; }
     const d = this.data;
 
-    // Anchor block (UI relaunch v2, Björn 29.08.2026): meta/chart/model-bar stay pinned to the
-    // top of the scrolling content area on every rail page — only the page-specific content
-    // below scrolls underneath them. Classic is untouched: `anchor` is simply `content` there
-    // (same reasoning as the `content`/`el` split in Phase A), so this changes nothing for it.
-    const anchor = isNextGen ? content.createEl('div', { cls: 'au-content-anchor' }) : content;
-
-    // ── Meta
+    // Anchor block: pinned to the top of the scrolling content area on every rail page, so the
+    // page-specific content below scrolls underneath it. Since the five-page rail (v2.0) only
+    // the live-timestamp line stays here — the heatmap moved to the Calendar page and the model
+    // bar to Analytics, where each has room instead of squeezing every page down.
+    const anchor = content.createEl('div', { cls: 'au-content-anchor' });
     const meta = anchor.createEl('div', { cls: 'au-meta' });
     meta.createEl('span', { cls: 'au-live', text: `${this._watcher ? '● Live' : '○'} ${d.updatedAt.toLocaleTimeString('en-GB')}` });
 
-    // ── 7-day chart (Classic: bar chart, unchanged) / heatmap (NextGen only — Nachschärfungsliste
-    // Punkt 5, 01.09.2026)
-    if (isNextGen) {
-      this._renderHeatmap(anchor, d.heat7);
-    } else {
-      this._renderChart(anchor, d.chart7);
-    }
-
-    // ── Model distribution (7 days)
-    this._renderModelBar(anchor, d.entries7);
-
-    // UI relaunch Phase 2/v2 — NextGen routes the rest of the body through the rail's page
-    // dispatch (_renderNextGenPages); Classic keeps its original, untouched inline sequence
-    // below (Last Action, 5h Window, Periods) exactly as before this change.
-    if (isNextGen) {
-      this._renderNextGenPages(content, d);
-      this._renderFooter(content, d);
-      // Calendar last, so it's the final child of .au-content and its sticky bottom:0 sticks
-      // flush with the scroll container's edge (mirror of the anchor being the first child).
-      if (this.plugin.settings.calendarVisible !== false) this._renderCalendar(content, d);
-      return;
-    }
-
-    // ── Last action
-    if (d.lastAction) {
-      const la  = d.lastAction;
-      const sec = content.createEl('div', { cls: 'au-section' });
-      const lhdr = sec.createEl('div', { cls: 'au-last-hdr' });
-      lhdr.createEl('span', { cls: 'au-section-title', text: t('lastAction') });
-      lhdr.createEl('span', { cls: 'au-model-chip', text: la.model.replace('claude-', '') });
-      const chips = sec.createEl('div', { cls: 'au-last-chips' });
-      const chipDefs = [
-        { label: t('chipIn'),  val: la.usage.input_tokens,                color: 'blue'   },
-        { label: t('chipOut'), val: la.usage.output_tokens,               color: 'green'  },
-        { label: t('chipCWr'), val: la.usage.cache_creation_input_tokens, color: 'purple' },
-        { label: t('chipCRd'), val: la.usage.cache_read_input_tokens,     color: 'amber'  },
-      ];
-      for (const { label, val, color } of chipDefs) {
-        const chip = chips.createEl('span', { cls: `au-last-chip au-last-chip-${color}` });
-        chip.createEl('span', { cls: 'au-last-chip-lbl', text: label + ' ' });
-        chip.createEl('span', { cls: 'au-last-chip-val', text: fmtTokens(val) });
-      }
-    }
-
-    // ── 5h Window
-    this._renderWindow5h(content);
-
-    // ── Periods
-    let sessionSub = '';
-    if (d.sessionStart) {
-      const startTs  = d.sessionStart;
-      const todayMid = dayStart(new Date());
-      const start    = new Date(startTs);
-      if (startTs < todayMid) {
-        const daysAgo = Math.floor((todayMid - startTs) / 86_400_000);
-        sessionSub = daysAgo === 1
-          ? t('startedYesterday')
-          : t('startedDate', start.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }));
-      } else {
-        sessionSub = t('startedToday', start.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
-      }
-    }
-    this._renderPeriod(content, 'this-session', t('thisSession'), d.session, sessionSub);
-    // Classic — untouched: today/7-days/30-days via the shared _renderPeriod()/_statRow().
-    // NextGen's equivalent content (verdict glyphs on Today, tile grids on 7/30 Days) already
-    // returned above via _renderNextGenPages(), so this code only ever runs for Classic.
-    this._renderPeriod(content, 'today',   t('today'),    d.today, t('calendarDay'));
-    this._renderPeriod(content, '7-days',  t('sevenDays'), d.day7);
-    this._renderPeriod(content, '30-days', t('thirtyDays', d.reportPeriodDays), d.day30);
-
+    // Rest of the body goes through the rail's page dispatch.
+    this._renderPages(content, d);
     this._renderFooter(content, d);
   }
 
-  // ── Footer (shared by Classic and NextGen) ────────────────────
+  // ── Footer ────────────────────────────────────────────────────
   _renderFooter(parent, d) {
     const footer   = parent.createEl('div', { cls: 'au-footer' });
     const leftSpan = footer.createEl('span', { cls: 'au-reset-countdown' });
@@ -1817,10 +2499,18 @@ class AnthropicUsageView extends obsidian.ItemView {
     // Overview (the 7 Days/N Days tile grids, split back into its own page — room to grow with
     // more summary info later) → Settings. Archive dropped entirely (was a placeholder only,
     // no real content yet — can come back once it has an actual design).
+    // Five pages (v2.0, from Björn's mockup). The landing page keeps the name "Today" rather
+    // than "Dashboard" as the mockup had it: "Dashboard" already means the HTML dashboard that
+    // opens in the browser, and one word for two different things would make every help text
+    // and support answer ambiguous (Björn, 30.09.2026).
+    // No Report page in the rail, deliberately (Björn, 30.09.2026): Dashboard and Report stay
+    // as header buttons, so a rail entry would be a second door to the same two actions — the
+    // same reason the ⚙ button left the header when the rail got its Settings page.
     const pages = [
-      { key: 'today',    icon: 'bar-chart-2', label: t('today')        },
-      { key: 'overview', icon: 'activity',    label: t('railOverview') },
-      { key: 'settings', icon: 'settings',    label: t('railSettings') },
+      { key: 'today',     icon: 'bar-chart-2', label: t('today')         },
+      { key: 'calendar',  icon: 'calendar',    label: t('railCalendar')  },
+      { key: 'analytics', icon: 'activity',    label: t('railAnalytics') },
+      { key: 'settings',  icon: 'settings',    label: t('railSettings')  },
     ];
     for (const p of pages) {
       const btn = rail.createEl('div', {
@@ -1836,12 +2526,17 @@ class AnthropicUsageView extends obsidian.ItemView {
     }
   }
 
-  _renderNextGenPages(el, d) {
+  _renderPages(el, d) {
     switch (this._activePage) {
-      case 'overview': this._renderOverviewPage(el, d); break;
-      case 'settings': this._renderSettingsPage(el);    break;
+      // 'overview' is the pre-2.0 key for what is now 'analytics'. Existing users have it
+      // persisted in memory from their last session, so it maps to the new page instead of
+      // silently falling through to Today.
+      case 'overview':
+      case 'analytics': this._renderAnalyticsPage(el, d); break;
+      case 'calendar':  this._renderCalendarPage(el, d);  break;
+      case 'settings':  this._renderSettingsPage(el);     break;
       case 'today':
-      default:         this._renderTodayPage(el, d);    break;
+      default:          this._renderTodayPage(el, d);     break;
     }
   }
 
@@ -1849,7 +2544,7 @@ class AnthropicUsageView extends obsidian.ItemView {
   // This Session + Today — verbatim the same content and renderers Classic uses for these
   // (_renderWindow5h/_renderPeriod/_renderPeriodToday), just moved here so they only show on
   // this one page instead of always inline. Default landing page in NextGen mode.
-  // Sidebar "Limit Pulse" (v1.9, NextGen-only) — Today vs. a fair daily share of the estimated
+  // Sidebar "Limit Pulse" — Today vs. the user own recent average, and this week vs. the
   // weekly limit, and this billing week's total vs. that same weekly-limit estimate. Deliberately
   // the very first thing on the Today page (Björn: "sofort mit einem Blick sehen"), reusing
   // computeRateLimitEstimates()/computeWeekStatus() so the numbers can never drift from the
@@ -1861,36 +2556,103 @@ class AnthropicUsageView extends obsidian.ItemView {
       body.createEl('div', { cls: 'au-section-sub', text: t('limitPulseNoWeekly') });
       return;
     }
-    const dailyShare = wp.weeklyLimitEst / 7;
-    const todayTotal = d.today.input + d.today.output;
+    // No daily quota exists (Björn, 01.10.2026). Anthropic enforces an anchored 5-hour window and
+    // a weekly cap — nothing in between. The old "fair daily share" (weeklyLimitEst / 7) was an
+    // invention of ours, and measuring a real day against an imaginary budget produced a verdict
+    // that looked authoritative while standing on nothing.
+    // Today is therefore compared against the user's OWN 29-day average per active day — the
+    // same baseline the heatmap, the calendar dots and the Today verdict glyphs already use. It
+    // claims no limit; it says "busier or quieter than you usually are".
+    const dailyBase  = d.avgDaily || 0;
+    const todayTotal = wp.todayTotal || 0;
+    // The 5h window is the limit that actually stops work mid-task, so it leads. Its target is
+    // the median of the user's own observed session-limit hits — the same figure the Dashboard's
+    // Limit Hero uses. Median rather than min, because the lowest hit ever seen is an outlier,
+    // not a ceiling. Null until a hit has been observed; then the panel shows the raw figure and
+    // claims nothing, same as the weekly one does before its first hit.
+    const sessBase = (wp.sessionEst && wp.sessionEst.median) || 0;
+    // The two panels need DIFFERENT bands, because they answer different questions.
+    // Against a limit, 100% is the ceiling — 80% already deserves a warning.
+    // Against your own average, 100% is a perfectly ordinary day. Applying the limit bands
+    // there would paint every normal day red. 1.5x is "busier than usual", 2x is the spike
+    // threshold the rest of the plugin already uses.
+    const LIMIT_BANDS = [
+      { upTo: 80,       key: 'good' },
+      { upTo: 100,      key: 'warn' },
+      { upTo: Infinity, key: 'bad'  },
+    ];
+    const AVERAGE_BANDS = [
+      { upTo: 150,      key: 'good' },
+      { upTo: 200,      key: 'warn' },
+      { upTo: Infinity, key: 'bad'  },
+    ];
     const items = [
-      { lbl: t('limitPulseToday'), val: todayTotal,   target: dailyShare,        subKey: 'limitPulseOfDaily'  },
-      { lbl: t('limitPulseWeek'),  val: wp.weekSoFar, target: wp.weeklyLimitEst, subKey: 'limitPulseOfWeekly' },
+      { lbl: t('limitPulse5h'),    val: wp.window5h,  target: sessBase,          subKey: 'limitPulseOf5h',     bands: LIMIT_BANDS,
+        note: sessBase > 0 ? t('limitPulseBasis', wp.sessionEst.n).replace('{v}', fmtTokens(sessBase)) : '' },
+      { lbl: t('limitPulseToday'), val: todayTotal,   target: dailyBase,         subKey: 'limitPulseOfDaily',  bands: AVERAGE_BANDS },
+      { lbl: t('limitPulseWeek'),  val: wp.weekSoFar, target: wp.weeklyLimitEst, subKey: 'limitPulseOfWeekly', bands: LIMIT_BANDS   },
     ];
     const row = body.createEl('div', { cls: 'au-pulse-row' });
     for (const it of items) {
+      // No baseline yet (fresh install, no active days) — show the raw figure, claim nothing.
+      if (!it.target) {
+        const item0 = row.createEl('div', { cls: 'au-pulse-item' });
+        item0.createEl('div', { cls: 'au-pulse-lbl', text: it.lbl });
+        item0.createEl('div', { cls: 'au-pulse-val', text: fmtTokens(it.val) });
+        continue;
+      }
       const pct = Math.round((it.val / it.target) * 100);
-      const verdict = bandedVerdict(pct, [
-        { upTo: 80,       key: 'good' },
-        { upTo: 100,      key: 'warn' },
-        { upTo: Infinity, key: 'bad'  },
-      ]);
+      const verdict = bandedVerdict(pct, it.bands);
       const item = row.createEl('div', { cls: 'au-pulse-item' });
       item.createEl('div', { cls: 'au-pulse-lbl', text: it.lbl });
-      // The number itself carries the verdict color too, not just the bar underneath — matches
-      // the Dashboard Limit Hero's behaviour, so the two never disagree on how alarming a
-      // number is meant to look.
+      // Compact ring (v2.0) — the sidebar's version of the dashboard's budget rings, scaled to
+      // a 300px panel. Built as a plain SVG string via innerHTML, the same approach the sidebar
+      // already uses for LOGO_SVG and the Overview sparklines.
+      const ringWrap = item.createEl('div', { cls: 'au-pulse-ring' });
+      ringWrap.innerHTML = auRingSvg(pct, `var(--au-${verdict === 'bad' ? 'crit' : verdict})`);
       item.createEl('div', { cls: `au-pulse-val au-pulse-val-${verdict}`, text: fmtTokens(it.val) });
-      const track = item.createEl('div', { cls: 'au-pulse-track' });
-      const fill  = track.createEl('div', { cls: `au-pulse-fill au-pulse-${verdict}` });
-      fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
       item.createEl('div', { cls: 'au-pulse-pct', text: t(it.subKey, pct) });
+      // Name the denominator (Björn, 02.10.2026: "wo zeigen wir den gemessenen Median?"). The
+      // panels printed a percentage of a number the sidebar never stated anywhere — fine as long
+      // as you trust it, useless the moment you want to check it. Tooltip rather than a fourth
+      // line, because three tiles in a 300px panel have no room for one.
+      item.title = `${fmtTokens(it.val)} / ${fmtTokens(it.target)}`
+        + (it.note ? `\n${it.note}` : '');
     }
-    body.createEl('div', { cls: 'au-section-sub', text: t('limitPulseFooter') });
+    // The long explanation that used to sit here moved into the glossary (Björn, 02.10.2026:
+    // "das ist zuviel Text"). It also carried a hard-coded hit count from one analysis, which
+    // contradicted the live figure on the line below — see the Limits section in the help panel.
+    // The 5h estimate in full, in words: the number every ring and every heatmap cell on this
+    // page is measured against. Only shown once a hit has actually been observed.
+    //
+    // The value is its own element so it can be styled (Björn, 02.10.2026: bold, the figure red
+    // and underlined, centred). The translations carry a {v} placeholder rather than taking the
+    // formatted number as an argument — the figure sits in a different position in each language,
+    // and splitting on a placeholder survives that, while assuming a fixed position would not.
+    if (sessBase > 0) {
+      const parts = t('limitPulseBasis', wp.sessionEst.n).split('{v}');
+      const basis = body.createEl('div', { cls: 'au-section-sub au-pulse-basis' });
+      basis.createSpan({ text: parts[0] });
+      basis.createSpan({ cls: 'au-pulse-basis-val', text: fmtTokens(sessBase) });
+      if (parts[1]) basis.createSpan({ text: parts[1] });
+      // The band underneath, in plain muted text: the median is the reference, this line says
+      // how much that reference wobbles. Skipped while there are too few hits for a band.
+      const se = wp.sessionEst;
+      if (se.bandLow && se.bandHigh) {
+        body.createEl('div', { cls: 'au-section-sub au-pulse-band',
+          text: t('limitPulseBand', fmtTokens(se.bandLow), fmtTokens(se.bandHigh)) });
+      }
+    }
   }
 
+  // Today page — strictly today or the last 7 days (Björn, 01.10.2026). Anything covering a
+  // longer span belongs on Analytics or in the Dashboard, so the page has one honest timeframe.
   _renderTodayPage(el, d) {
+    // Gauges first, heatmap below (Björn, 02.10.2026). The three rings answer "where do I stand
+    // right now", which is the question the page exists for; the heatmap is the context for that
+    // answer, so it reads better underneath it than above it.
     this._renderLimitPulse(el, d);
+    this._renderWeekHeatmap(el, d, d.entries7);
     if (d.lastAction) {
       const la  = d.lastAction;
       const sec = el.createEl('div', { cls: 'au-section' });
@@ -1931,12 +2693,11 @@ class AnthropicUsageView extends obsidian.ItemView {
     this._renderPeriodToday(el, d);
   }
 
-  // Overview page (Björn, 29.08.2026, second rail revision) = the 7 Days/N Days tile grids,
-  // split back out into their own page (briefly lived on Today/the old "Overview" page).
-  // Deliberately its own method, not just a rename of the old Trends-page renderer — Björn's
-  // plan is to grow this with more summary info later (visual polish first, content later),
-  // so it gets a name/identity of its own rather than being "leftover Trends code".
-  _renderOverviewPage(el, d) {
+  // Analytics page (v2.0, renamed from "Overview") = the 7 Days/N Days tile grids plus the
+  // model distribution bar, which used to sit in the anchor above every page. Grouping both
+  // here gives the page an actual subject — "how has usage behaved over time" — instead of
+  // being a leftover tile grid.
+  _renderAnalyticsPage(el, d) {
     const weekBadge = d.spikeRatioWeek >= 2
       ? { verdict: 'warn', text: `${d.spikeRatioWeek.toFixed(1)}×` }
       : null;
@@ -1944,7 +2705,46 @@ class AnthropicUsageView extends obsidian.ItemView {
       d.chart7.filter(x => x.total > 0).length, d.chart7, weekBadge);
     this._renderPeriodTiles(el, '30-days', t('thirtyDays', d.reportPeriodDays), d.day30,
       d.reportPeriodDays, d.day30ActiveDays, d.periodSeries);
+    this._renderModelBar(el, d.entries7);
   }
+
+  // Calendar page (v2.0, Björn 30.09.2026; reduced to two months 01.10.2026) — nothing but the
+  // month grids now. The heatmap that used to share this page moved to Today in its new
+  // day-level form, which left the calendar with a single subject: the months themselves.
+  //
+  // Two months instead of one, because a single month hides the thing people look for here —
+  // what the run-up looked like. At the start of a month, one grid shows three usable days.
+  // The arrows shift the pair, so the personal day notes stay reachable all the way back.
+  _renderCalendarPage(el, d) {
+    const loc  = localeFor(_lang);
+    const cur  = new Date(this._calYear, this._calMonth, 1);
+    const prev = new Date(this._calYear, this._calMonth - 1, 1);
+    const now  = new Date();
+
+    const minReached = this._calYear < 2020 || (this._calYear === 2020 && this._calMonth <= 0);
+    const maxReached = this._calYear === now.getFullYear() && this._calMonth === now.getMonth();
+
+    const wrap = el.createEl('div', { cls: 'au-calendar' });
+    const head = wrap.createEl('div', { cls: 'au-cal-head' });
+    const back = head.createEl('button', { cls: 'au-cal-nav', text: '‹' });
+    back.title = t('calPrev');
+    back.disabled = minReached;
+    if (!minReached) back.onclick = () => this._calShift(-1);
+    head.createEl('span', { cls: 'au-cal-title', text:
+      prev.toLocaleDateString(loc, { month: 'short' })
+      + ' – ' + cur.toLocaleDateString(loc, { month: 'short', year: 'numeric' }) });
+    const fwd = head.createEl('button', { cls: 'au-cal-nav', text: '›' });
+    fwd.title = t('calNext');
+    fwd.disabled = maxReached;
+    if (!maxReached) fwd.onclick = () => this._calShift(1);
+
+    for (const m of [prev, cur]) {
+      wrap.createEl('div', { cls: 'au-cal-month-lbl',
+        text: m.toLocaleDateString(loc, { month: 'long', year: 'numeric' }) });
+      this._renderMonthGrid(wrap, d, m.getFullYear(), m.getMonth());
+    }
+  }
+
 
   // Settings page (Phase E) — the exact same Setting objects the real Obsidian settings tab
   // uses (buildSettingsUI(), shared, defined once), rendered directly into the panel instead of
@@ -1955,33 +2755,17 @@ class AnthropicUsageView extends obsidian.ItemView {
     buildSettingsUI(wrap, this.app, this.plugin, () => this.render());
   }
 
-  // ── NextGen activity calendar (v1.8) ─────────────────────────────
-  // Pinned to the bottom of .au-content on every rail page (Today/Overview/Settings) — the
-  // mirror of the sticky-top .au-content-anchor. Display only, no click behaviour. One dot per
-  // past active day, banded against the same 29-day avgDaily baseline the Today spike badge
-  // uses (no second baseline concept). Classic never calls this.
-  _renderCalendar(parent, d) {
+  // ── Activity calendar, one month grid ────────────────────────────
+  // One dot per past active day, banded against the same 29-day avgDaily baseline the Today
+  // spike badge and the heatmap use (no second baseline concept). Every cell is clickable for
+  // a personal day note.
+  //
+  // No header and no navigation here — the page above owns both, because its two month grids
+  // share one pair of arrows. Split out of _renderCalendar() on 01.10.2026 when the page went
+  // from one month to two; the cell logic below is unchanged.
+  _renderMonthGrid(parent, d, year, month) {
     const loc = localeFor(_lang);
-    const cal = parent.createEl('div', { cls: 'au-calendar' });
-
-    const viewFirst = new Date(this._calYear, this._calMonth, 1);
-    const now       = new Date();
-    const minReached = this._calYear < 2020 || (this._calYear === 2020 && this._calMonth <= 0);
-    const maxReached = this._calYear === now.getFullYear() && this._calMonth === now.getMonth();
-
-    const head = cal.createEl('div', { cls: 'au-cal-head' });
-    const prev = head.createEl('button', { cls: 'au-cal-nav', text: '‹' });
-    prev.title = t('calPrev');
-    prev.disabled = minReached;
-    if (!minReached) prev.onclick = () => this._calShift(-1);
-    head.createEl('span', { cls: 'au-cal-title',
-      text: viewFirst.toLocaleDateString(loc, { month: 'long', year: 'numeric' }) });
-    const next = head.createEl('button', { cls: 'au-cal-nav', text: '›' });
-    next.title = t('calNext');
-    next.disabled = maxReached;
-    if (!maxReached) next.onclick = () => this._calShift(1);
-
-    const grid = cal.createEl('div', { cls: 'au-cal-grid' });
+    const grid = parent.createEl('div', { cls: 'au-cal-grid' });
     // Weekday header, Monday-first, localised short names (2024-01-01 is a Monday).
     const wkRef = new Date(2024, 0, 1);
     for (let i = 0; i < 7; i++) {
@@ -1991,7 +2775,7 @@ class AnthropicUsageView extends obsidian.ItemView {
 
     const avg = d.avgDaily || 0;
     const comments = this.plugin.settings.dailyComments || {};
-    for (const c of this._buildMonthDays(this._calYear, this._calMonth)) {
+    for (const c of this._buildMonthDays(year, month)) {
       const dateKey  = new Date(c.ts).toISOString().slice(0, 10);
       const noteText = comments[dateKey] || '';
       const cell = grid.createEl('span', {
@@ -2002,7 +2786,7 @@ class AnthropicUsageView extends obsidian.ItemView {
           + (noteText   ? ' has-comment' : ''),
       });
       cell.createEl('span', { cls: 'au-cal-dom', text: String(c.dom) });
-      const total = (c.input || 0) + (c.output || 0);
+      const total = c.billed || 0;
       let verdict = null;
       if (!c.isFuture && total > 0 && avg > 0) {
         verdict = bandedVerdict(total / avg, [
@@ -2015,12 +2799,15 @@ class AnthropicUsageView extends obsidian.ItemView {
       // Tooltip and click target are the WHOLE cell, not just the small dot — a 5px dot is
       // hard to hit precisely with a mouse, the ~22px cell is not. Every day is clickable to
       // add/edit a personal note, regardless of whether it has usage data.
+      // Tooltip layout: line 1 is date + token usage, line 2+ is the note, wrapped at ~30
+      // chars so a long personal note doesn't render as one unstructured strip (Björn, 24.09.2026).
       const dateLabel = new Date(c.ts).toLocaleDateString(loc);
-      const parts = [dateLabel];
-      if (verdict !== null) parts.push(fmtTokens(total));
-      if (noteText) parts.push(t('calNoteEdit') + ': "' + noteText + '"');
-      else parts.push(t('calNoteAdd'));
-      cell.title = parts.join(' · ');
+      const usageLine = [dateLabel];
+      if (verdict !== null) usageLine.push(fmtTokens(total));
+      const lines = [usageLine.join(' · ')];
+      if (noteText) lines.push(t('calNoteEdit') + ':', wrapText(noteText, 30));
+      else lines.push(t('calNoteAdd'));
+      cell.title = lines.join('\n');
       cell.addEventListener('click', () => {
         new DayCommentModal(this.app, c.ts, comments[dateKey], async (newText) => {
           const next = Object.assign({}, this.plugin.settings.dailyComments || {});
@@ -2031,6 +2818,119 @@ class AnthropicUsageView extends obsidian.ItemView {
         }).open();
       });
     }
+  }
+
+  // ── CSV export from the plugin (Björn, 02.10.2026) ───────────────────────────
+  // The Dashboard already exports the same three files, but as browser downloads — and a web
+  // page cannot choose a target folder, only a filename. Björn wanted the folder configurable,
+  // which is only honest if the plugin writes the files itself. So it does, into a vault folder
+  // like the report and the archive, and the Dashboard download stays for the quick grab.
+  //
+  // Shared rows use the Dashboard's exact metric names on purpose — two routes to the same
+  // figure must not label it differently. The two files are not byte-identical though: the
+  // Dashboard additionally has the Focus Score, which is only computed while building the
+  // Dashboard, and this side additionally has Today, the current 5h window and the counting
+  // note, which the sidebar has and the Dashboard payload does not.
+  async _exportCsv(which) {
+    const d = this.data;
+    if (!d) { new obsidian.Notice(t('csvNoData')); return; }
+
+    const folder = (this.plugin.settings.csvPath || 'Token Usage Exports').replace(/^\/+|\/+$/g, '');
+    try {
+      if (folder && !(await this.app.vault.adapter.exists(folder))) {
+        await this.app.vault.createFolder(folder);
+      }
+    } catch (err) {
+      // Already exists as a race, or the name collides with a file — either way, report it
+      // rather than writing the CSVs somewhere the user did not ask for.
+      if (!(await this.app.vault.adapter.exists(folder))) {
+        new obsidian.Notice(t('csvFolderFailed', folder));
+        console.error('AnthropicUsage CSV folder error:', err);
+        return;
+      }
+    }
+
+    const kinds = which === 'all' ? ['projects', 'daily', 'kpis'] : [which];
+    const stamp = csvIsoNode(Date.now());
+    const written = [];
+    for (const kind of kinds) {
+      const rows = this._csvRows(kind);
+      if (!rows || rows.length < 2) continue; // header only = nothing to say
+      const path = (folder ? folder + '/' : '') + `token-usage-${kind}-${stamp}.csv`;
+      await this.app.vault.adapter.write(path, CSV_BOM + csvFromNode(rows));
+      written.push(path);
+    }
+    if (written.length === 0) { new obsidian.Notice(t('csvNoData')); return; }
+    // Name the files, not just the count — "3 files written" still leaves the user hunting.
+    // The folder is then one click away via the Settings button next to the path.
+    new obsidian.Notice(
+      t('csvWritten', written.length, folder || '/') + '\n'
+      + written.map(p => '· ' + p.split('/').pop()).join('\n'),
+      8000
+    );
+  }
+
+  _csvRows(kind) {
+    const d = this.data;
+    const series = d.periodSeries || [];
+
+    if (kind === 'projects') {
+      const rows = [['Level', 'Vault / root', 'Sub-project', 'Tokens', '% of parent', 'Active days', 'First active', 'Last active']];
+      for (const p of this._computeProjectOverview(series)) {
+        rows.push(['vault', p.label, '', p.tokens || 0, p.pct || 0, p.activeDays || 0, csvIsoNode(p.firstTs), csvIsoNode(p.lastTs)]);
+        for (const s of (p.projects || [])) {
+          rows.push(['sub', p.label, s.label, s.tokens || 0, s.pct || 0, '', '', '']);
+        }
+      }
+      return rows;
+    }
+
+    if (kind === 'daily') {
+      const labels = [];
+      for (const day of series) {
+        for (const l of Object.keys(day.byRoot || {})) if (labels.indexOf(l) === -1) labels.push(l);
+      }
+      labels.sort();
+      const rows = [['Date'].concat(labels).concat(['Total'])];
+      for (const day of series.slice().sort((a, b) => a.ts - b.ts)) {
+        const cells = labels.map(l => { const r = (day.byRoot || {})[l]; return r ? r.total : 0; });
+        rows.push([csvIsoNode(day.ts)].concat(cells).concat([day.billed || 0]));
+      }
+      return rows;
+    }
+
+    // Key figures. Same metric names as the Dashboard export so the two files line up.
+    const ws  = d.weekStatus || {};
+    const wp  = d.weekPulse  || {};
+    const per = (d.reportPeriodDays || 30) + ' days';
+    const rows = [['Metric', 'Value', 'Unit', 'Scope']];
+    const add = (m, v, u, s) => rows.push([m, (v === null || v === undefined) ? '' : v, u || '', s || '']);
+    add('Total tokens',              d.day30 ? d.day30.billed : null, 'tokens', per);
+    add('API calls',                 d.day30 ? d.day30.count  : null, 'calls',  per);
+    add('Active days',               d.day30ActiveDays,       'days',   per);
+    add('Period length',             d.reportPeriodDays,      'days',   per);
+    add('Avg tokens per active day', d.day30AvgPerActiveDay,  'tokens', per);
+    add('Cache write',               d.day30 ? d.day30.cacheCreate : null, 'tokens', per);
+    add('Cache read',                d.day30 ? d.day30.cacheRead   : null, 'tokens', per);
+    add('Cache efficiency', (d.day30 && d.day30.cacheCreate > 0)
+      ? Math.round(d.day30.cacheRead / d.day30.cacheCreate * 10) / 10 : null, 'ratio (x)', per);
+    add('Today',                     wp.todayTotal,           'tokens', 'calendar day');
+    add('Avg per active day (29d)',  Math.round(d.avgDaily || 0), 'tokens', 'baseline for Today');
+    add('Current 5h window',         wp.window5h,             'tokens', 'anchored window');
+    add('Week so far',               ws.soFar,                'tokens', 'current billing week');
+    add('Week forecast',             ws.forecast,             'tokens', 'current billing week');
+    add('Week share of est. limit',  ws.pct,                  '%',      'current billing week');
+    add('Estimated 5h limit',        wp.sessionEst ? wp.sessionEst.median : null, 'tokens', 'median of observed hits');
+    add('5h limit range low',        wp.sessionEst ? wp.sessionEst.min : null,    'tokens', 'lowest observed hit');
+    add('5h limit range high',       wp.sessionEst ? wp.sessionEst.max : null,    'tokens', 'highest observed hit');
+    add('5h limit usual band low',   wp.sessionEst ? wp.sessionEst.bandLow : null,  'tokens', '25th percentile of observed hits');
+    add('5h limit usual band high',  wp.sessionEst ? wp.sessionEst.bandHigh : null, 'tokens', '75th percentile of observed hits');
+    add('5h limit hits observed', wp.totalSession ?? (wp.sessionEst ? wp.sessionEst.n : 0), 'hits', 'within retention window');
+    add('Weekly limit hits observed', wp.weeklyHits,          'hits',   'within retention window');
+    add('Estimated weekly limit',    wp.weeklyLimitEst,       'tokens', 'empirical estimate');
+    add('Counting',                  'input + output',        '',       'cache does not count toward limits');
+    add('Exported at',               new Date().toISOString(), 'ISO 8601', '');
+    return rows;
   }
 
   // Month step with clamping — never before Jan 2020, never into a future month.
@@ -2072,65 +2972,205 @@ class AnthropicUsageView extends obsidian.ItemView {
     };
   }
 
-  // ── Chart ─────────────────────────────────────────────────────
-  _renderChart(parent, days) {
-    const sec   = parent.createEl('div', { cls: 'au-section au-chart-section' });
-    const chart = sec.createEl('div', { cls: 'au-chart' });
-    const max   = Math.max(...days.map(d => d.total), 1);
-    for (const day of days) {
-      const ratio = max > 0 ? day.total / max : 0;
-      const color = intensityColor(ratio, day.isToday);
-      const col   = chart.createEl('div', { cls: 'au-chart-col' });
-      const pct   = Math.max(Math.round(ratio * 100), day.total > 0 ? 4 : 0);
-      const bar   = col.createEl('div', { cls: 'au-chart-bar' + (day.isToday ? ' au-bar-today' : '') });
-      bar.style.height     = pct + '%';
-      bar.style.background = color;
-      if (day.isToday) bar.style.boxShadow = `0 0 8px ${color}`;
-      bar.title = `${day.label}: ${fmtTokens(day.total)} T`;
-      col.createEl('div', { cls: 'au-chart-lbl' + (day.isToday ? ' au-lbl-today' : ''), text: day.label });
+  // ── Activity heatmap, week strip (Today page) ────────────────
+  // Seven cells, one per day, last 7 days ending today. Lives above the three gauges and spans
+  // the same width, so the Today page reads as one block (Björn, 01.10.2026).
+  //
+  // Seven days rather than thirty because of Björn's rule for this page: everything on Today is
+  // either from today or from the last 7 days — anything longer belongs in the Dashboard. The
+  // 30-day grid still exists, it just moved to Analytics, which is the page about longer spans.
+  //
+  // Same five bands and the same avgDaily baseline as the month grid, so the two never
+  // contradict each other for the days they share.
+  _renderWeekHeatmap(parent, d, entries) {
+    const loc  = localeFor(_lang);
+    const now  = Date.now();
+    // The user's own billing week, not the last 7 calendar days (Björn, 02.10.2026). His cycle
+    // runs Sunday 18:00 to Sunday 17:59; other users have different ones, and the plugin already
+    // knows each user's cycle from the weekly-reset calibration.
+    //
+    // Each row is a 24-hour SLICE of that week, not a "billing day" — Anthropic bills no day at
+    // all, only the rolling 5h window and this weekly cap (Björn corrected the wording 02.10.).
+    // The slices start at the reset hour purely so that seven of them tile the week exactly;
+    // slicing at midnight would leave a part-row at each end and spread a single week across
+    // eight rows.
+    const wkStart = billingWeekStart(now);
+    // End of the window computed by calendar arithmetic, not +7×86400000 — the week containing a
+    // DST change is 23 or 25 hours longer, and adding fixed milliseconds would put the boundary
+    // an hour off exactly when the countdown matters. Germany switches on 25.10.2026.
+    const wkEndD = new Date(wkStart); wkEndD.setDate(wkEndD.getDate() + 7);
+    const wkEnd  = wkEndD.getTime();
+    const sessBase = (d.weekPulse && d.weekPulse.sessionEst && d.weekPulse.sessionEst.median) || 0;
+
+    const hhmm = (ms) => new Date(ms).toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
+    const dow  = (ms) => new Date(ms).toLocaleDateString(loc, { weekday: 'short' });
+    // `content` is the collapsible part — everything below has to go inside it.
+    const content = this._heatmapHeader(parent,
+      t('heatmapCycle', `${dow(wkStart)} ${hhmm(wkStart)} → ${dow(wkEnd)} ${hhmm(wkEnd)}`));
+
+    // Grid on the left, legend as a column on the right — the mockup's layout (Björn, 02.10.).
+    const body = content.createEl('div', { cls: 'au-dheat-body' });
+    const grid = body.createEl('div', { cls: 'au-tl' });
+
+    // EIGHT rows, not seven (Björn, 02.10.2026). A week that runs Sunday 18:00 to Sunday 17:59
+    // touches eight calendar days: Sunday evening, six whole days, and Sunday morning again.
+    // Rows are therefore real calendar days, and the first and last are deliberately part-rows —
+    // that is what makes the cycle boundary visible instead of hiding it inside 24-hour slices
+    // that each straddle two dates. It also removes the naming problem those slices had: a row
+    // called "Thu" now simply means Thursday.
+    const SLOT_MS = 2 * 3_600_000;
+    const day0 = new Date(wkStart); day0.setHours(0, 0, 0, 0);
+    const dayAt = (r) => { const x = new Date(day0); x.setDate(day0.getDate() + r); return x; };
+
+    // Bucket by local calendar day and 2h slot. Day index via rounded date difference so a DST
+    // shift inside the week cannot push a day into its neighbour's row.
+    const slots = new Map(); // (dayIndex * 12 + slotIndex) -> tokens
+    for (const e of (entries || [])) {
+      if (e.timestamp < wkStart || e.timestamp >= wkEnd) continue;
+      const dt = new Date(e.timestamp);
+      const ds = new Date(dt); ds.setHours(0, 0, 0, 0);
+      const r  = Math.round((ds.getTime() - day0.getTime()) / 86_400_000);
+      if (r < 0 || r > 7) continue;
+      const key = r * 12 + Math.floor(dt.getHours() / 2);
+      slots.set(key, (slots.get(key) || 0) + billedEntry(e));
     }
+
+    const todayMid = dayStart(new Date());
+    for (let r = 0; r < 8; r++) {
+      const ds  = dayAt(r);
+      const row = grid.createEl('div', { cls: 'au-tl-row' });
+      const lbl = row.createEl('span', {
+        cls:  'au-tl-dow' + (ds.getTime() === todayMid ? ' is-today' : ''),
+        text: dow(ds.getTime()),
+      });
+      lbl.title = ds.toLocaleDateString(loc, { weekday: 'long', day: '2-digit', month: '2-digit' });
+
+      const cells = row.createEl('div', { cls: 'au-tl-cells' });
+      for (let c = 0; c < 12; c++) {
+        const from = new Date(ds); from.setHours(c * 2, 0, 0, 0);
+        const ft   = from.getTime();
+        const cell = cells.createEl('span', { cls: 'au-tl-cell' });
+
+        // Three different kinds of nothing, kept apart on purpose: outside the billing window,
+        // still in the future, and genuinely no activity. Only the last one is a statement about
+        // how the week went.
+        if (ft < wkStart || ft >= wkEnd) { cell.addClass('is-outside'); continue; }
+        if (ft > now) { cell.addClass('is-void'); continue; }
+
+        const tok = slots.get(r * 12 + c) || 0;
+        cell.addClass('au-dheat-' + slotHeatBand(tok, sessBase));
+        // Shading within the band (mockup). The band carries the meaning and is what the legend
+        // explains; the shade only says where inside the band the value sits, and it always runs
+        // the same way — more tokens, more solid. No extra claim, just resolution.
+        const sh = slotShade(tok, sessBase);
+        if (sh < 1) cell.style.opacity = sh.toFixed(2);
+        cell.title = `${hhmm(ft)}–${hhmm(ft + SLOT_MS)} · `
+          + (tok > 0 ? fmtTokens(tok) : t('heatLegendEmpty'));
+      }
+    }
+
+    // No hour ruler (Björn, 02.10.2026). Four numbers under twelve columns were more clutter
+    // than orientation in a sidebar this narrow — the exact hour of a cell is in its tooltip,
+    // and the shape of a day is readable without axis labels.
+
+    // Active Days sits in the freed right-hand column, where the legend used to be
+    // (Björn, 02.10.2026). The legend moved to a single line underneath, which buys the grid
+    // and this panel the width they both needed.
+    this._renderActiveDays(body, d);
+    this._heatmapLegend(content, 'au-dheat-legend-row');
+    content.createEl('div', { cls: 'au-section-sub', text: t('timelineSub') });
   }
 
-  // ── Heatmap (NextGen only) ───────────────────────────────────
-  // 7 days × 6×4h blocks, fixed 3-band coloring (High/Medium/Low). Replaces _renderChart() in
-  // NextGen mode only — Nachschärfungsliste Punkt 5, 01.09.2026. _renderChart() itself untouched.
-  _renderHeatmap(parent, dayBlocks) {
-    const sec = parent.createEl('div', { cls: 'au-section au-heatmap-section' });
-    sec.createEl('div', { cls: 'au-section-title', text: t('heatmapTitle') });
+  // Active days in the current billing week (Björn, 02.10.2026 — from his mockup).
+  //
+  // Counted in the SAME seven 24-hour slices the weekly gauge uses, not in calendar days. The
+  // heatmap beside it is drawn in calendar days because that is how people read a clock, but
+  // "how many days did I work this week" is a question about the billing window, and answering
+  // it in a different unit than the weekly ring would invite comparing two figures that do not
+  // share a denominator. Each dot names its exact span in the tooltip.
+  //
+  // Three dot states, same discipline as the heatmap cells: worked, elapsed-but-idle, and not
+  // yet reached. The last one is not an idle day, it has simply not happened.
+  _renderActiveDays(parent, d) {
+    const ws   = (d.weekStatus && d.weekStatus.days) ? d.weekStatus.days : [];
+    if (ws.length === 0) return;
+    const loc  = localeFor(_lang);
+    const wkStart = billingWeekStart(Date.now());
+    const active  = ws.filter(x => x.tokens > 0).length;
 
-    const max = Math.max(...dayBlocks.flatMap(d => d.blocks.map(b => b.total)), 1);
+    const box = parent.createEl('div', { cls: 'au-active' });
+    const hdr = box.createEl('div', { cls: 'au-active-hdr' });
+    const ico = hdr.createEl('div', { cls: 'au-active-ico' });
+    obsidian.setIcon(ico, 'flame');
+    hdr.createEl('span', { cls: 'au-active-title', text: t('activeDaysTitle') });
 
-    const grid = sec.createEl('div', { cls: 'au-heatmap-grid' });
-    for (const day of dayBlocks) {
-      const col   = grid.createEl('div', { cls: 'au-heatmap-col' });
-      const cells = col.createEl('div', { cls: 'au-heatmap-cells' });
-      for (const block of day.blocks) {
-        const ratio = max > 0 ? block.total / max : 0;
-        const { css } = heatBandColor(ratio);
-        const cell = cells.createEl('div', { cls: 'au-heatmap-cell' });
-        cell.style.background = css;
-        // isToday/past dimming only — the color itself now fully communicates the band (gray
-        // "empty" is a genuinely different color from green "low", not the same gray at a
-        // different opacity like the previous purple/blue/gray palette needed).
-        cell.style.opacity = day.isToday ? '1' : '0.7';
-        cell.title = `${day.date} ${block.rangeLabel}: ${fmtTokens(block.total)} T`;
+    const val = box.createEl('div', { cls: 'au-active-val' });
+    val.createSpan({ cls: 'au-active-num', text: String(active) });
+    val.createSpan({ cls: 'au-active-of',  text: ` / ${ws.length}` });
+
+    const dots = box.createEl('div', { cls: 'au-active-dots' });
+    const hhmm = (ms) => new Date(ms).toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
+    const dow  = (ms) => new Date(ms).toLocaleDateString(loc, { weekday: 'short' });
+    ws.forEach((day, i) => {
+      const from = wkStart + i * 86_400_000;
+      const state = day.tokens > 0 ? 'on' : (day.status === 'future' ? 'future' : 'off');
+      const dot = dots.createEl('span', { cls: `au-active-dot is-${state}` });
+      dot.title = `${dow(from)} ${hhmm(from)} → ${dow(from + 86_400_000)} ${hhmm(from)}`
+        + ' · ' + (day.tokens > 0 ? fmtTokens(day.tokens) : t('heatLegendEmpty'));
+    });
+
+    box.createEl('div', { cls: 'au-active-sub', text: t('activeDaysSub') });
+  }
+
+  // Header for the heatmap — icon tile, title, caller-supplied subtitle, and collapsible
+  // (Björn, 02.10.2026). It uses the same `this._collapsed` set as _makeSection(), so the state
+  // survives every data refresh and the heatmap does not spring back open each time the sidebar
+  // redraws. Its own markup rather than _makeSection() because that one has no room for the
+  // icon tile and the two-line heading.
+  //
+  // Returns the CONTENT container, not the section: everything the caller appends has to land
+  // inside the part that gets hidden, otherwise a collapsed heatmap would leave its grid behind.
+  _heatmapHeader(parent, subText) {
+    const KEY = 'heatmap';
+    const isCollapsed = this._collapsed.has(KEY);
+    const sec = parent.createEl('div', { cls: 'au-section au-dheat' });
+    const hdr = sec.createEl('div', { cls: 'au-dheat-hdr' });
+    const chev = hdr.createEl('span', { cls: 'au-chevron', text: isCollapsed ? '▶' : '▼' });
+    const ico = hdr.createEl('div', { cls: 'au-dheat-ico' });
+    obsidian.setIcon(ico, 'calendar-days');
+    const txt = hdr.createEl('div', { cls: 'au-dheat-hdr-txt' });
+    txt.createEl('div', { cls: 'au-section-title', text: t('heatmapTitle') });
+    txt.createEl('div', { cls: 'au-section-sub',   text: subText });
+
+    const content = sec.createEl('div', { cls: 'au-dheat-content' });
+    if (isCollapsed) content.style.display = 'none';
+    hdr.addEventListener('click', () => {
+      if (this._collapsed.has(KEY)) {
+        this._collapsed.delete(KEY);
+        chev.textContent = '▼';
+        content.style.display = '';
+      } else {
+        this._collapsed.add(KEY);
+        chev.textContent = '▶';
+        content.style.display = 'none';
       }
-      col.createEl('div', {
-        cls:  'au-heatmap-lbl' + (day.isToday ? ' au-lbl-today' : ''),
-        text: day.label,
-      });
-    }
+    });
+    return content;
+  }
 
-    const legend = sec.createEl('div', { cls: 'au-heatmap-legend' });
+  // Shared five-band legend. Both heatmaps use the same bands, so they must not drift apart.
+  _heatmapLegend(parent, cls) {
+    const legend = parent.createEl('div', { cls: `au-dheat-legend ${cls || ''}` });
     const legendDefs = [
-      { swatchCls: 'au-heatmap-swatch-high',   label: t('heatLegendHigh')   },
-      { swatchCls: 'au-heatmap-swatch-medium', label: t('heatLegendMedium') },
-      { swatchCls: 'au-heatmap-swatch-low',    label: t('heatLegendLow')    },
-      { swatchCls: 'au-heatmap-swatch-empty',  label: t('heatLegendEmpty')  },
+      { band: 'empty',    label: t('heatLegendEmpty')  },
+      { band: 'low',      label: t('heatLegendLow')    },
+      { band: 'medium',   label: t('heatLegendMedium') },
+      { band: 'high',     label: t('heatLegendHigh')   },
+      { band: 'veryhigh', label: t('heatLegendVhigh')  },
     ];
-    for (const { swatchCls, label } of legendDefs) {
-      const item = legend.createEl('span', { cls: 'au-heatmap-legend-item' });
-      item.createEl('span', { cls: `au-heatmap-swatch ${swatchCls}` });
+    for (const { band, label } of legendDefs) {
+      const item = legend.createEl('span', { cls: 'au-dheat-legend-item' });
+      item.createEl('span', { cls: `au-dheat-swatch au-dheat-${band}` });
       item.createEl('span', { text: label });
     }
   }
@@ -2203,7 +3243,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       return;
     }
     const { body } = this._makeSection(parent, '5h', t('last5h'));
-    body.createEl('div', { cls: 'au-section-sub', text: t('rollingWindow') });
+    body.createEl('div', { cls: 'au-section-sub', text: t('anchoredWindow') });
     const maxVal = Math.max(window5h.agg.input, window5h.agg.output, window5h.agg.cacheCreate, window5h.agg.cacheRead, 1);
     this._statRow(body, t('rowInput'),  window5h.agg.input,       maxVal, 'blue');
     this._statRow(body, t('rowOutput'), window5h.agg.output,      maxVal, 'green');
@@ -2278,6 +3318,10 @@ class AnthropicUsageView extends obsidian.ItemView {
   // no extra height), plus an optional compact verdict glyph after the bar.
   _statRowNextGen(parent, label, value, max, color, verdict, baselineDays) {
     const row = parent.createEl('div', { cls: 'au-stat-row au-stat-row-ng' });
+    // Colour chip in front of the label (v2.0, from Björn's mockup). It carries the token
+    // type's own colour, so the row says which type it is before the label is even read —
+    // and it ties the row to the bar further right, which uses the same colour.
+    row.createEl('span', { cls: `au-stat-chip au-bar-${color}` });
     row.createEl('span', { cls: 'au-stat-lbl', text: label });
     row.createEl('span', { cls: `au-stat-val au-text-${color}`, text: fmtTokens(value) });
     const wrap = row.createEl('div', { cls: 'au-mini-bar-wrap' });
@@ -2315,10 +3359,10 @@ class AnthropicUsageView extends obsidian.ItemView {
   _renderPeriodTiles(parent, key, title, stats, periodDays, activeDays, series, totalBadge) {
     if (stats.count === 0) return;
     const { body } = this._makeSection(parent, key, title);
-    const total = stats.input + stats.output;
+    const total = stats.billed || billedOf(stats);
     const avgPerActiveDay = activeDays > 0 ? Math.round(total / activeDays) : 0;
     const grid = body.createEl('div', { cls: 'au-tile-grid' });
-    const totalSeries = (series || []).map(x => (x.input || 0) + (x.output || 0));
+    const totalSeries = (series || []).map(x => x.billed || 0);
     const callsSeries  = (series || []).map(x => x.reqs || 0);
     this._tileKpi(grid, {
       value: fmtTokens(total), label: t('tileTotal'), color: 'blue', badge: totalBadge,
@@ -2424,7 +3468,7 @@ class AnthropicUsageView extends obsidian.ItemView {
         for (const e of dayEntries) {
           const f = modelFamily(e.model);
           modelCts[f] = (modelCts[f] || 0) + 1;
-          modelTok[f] = (modelTok[f] || 0) + e.usage.input_tokens + e.usage.output_tokens;
+          modelTok[f] = (modelTok[f] || 0) + billedEntry(e);
           const rootLabel = vaultLabel(e.root);
           const projLabel = vaultLabel(e.cwd);
           const tok = e.usage.input_tokens + e.usage.output_tokens;
@@ -2559,7 +3603,8 @@ class AnthropicUsageView extends obsidian.ItemView {
         Other:  mt.Other  || 0,
         input:       fm.input  || 0,
         output:      fm.output || 0,
-        total:       (fm.input || 0) + (fm.output || 0),
+        total:       billedOf(fm),
+        billed:      billedOf(fm),
         reqs:        fm.calls || 0,
         cacheCreate: fm.cacheCreate || 0,
         cacheRead:   fm.cacheRead || 0,
@@ -2630,7 +3675,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       let input = 0, output = 0, reqs = 0, cacheCreate = 0, cacheRead = 0;
       for (const e of dayE) {
         const f = modelFamily(e.model);
-        byM[f]      += e.usage.input_tokens + e.usage.output_tokens;
+        byM[f]      += billedEntry(e);
         input       += e.usage.input_tokens  || 0;
         output      += e.usage.output_tokens || 0;
         cacheCreate += e.usage.cache_creation_input_tokens || 0;
@@ -2638,7 +3683,7 @@ class AnthropicUsageView extends obsidian.ItemView {
         reqs++;
         const rootLabel = vaultLabel(e.root);
         const projLabel = vaultLabel(e.cwd);
-        const tok = e.usage.input_tokens + e.usage.output_tokens;
+        const tok = billedEntry(e);
         if (!byRoot[rootLabel]) byRoot[rootLabel] = { total: 0, projects: {} };
         byRoot[rootLabel].total += tok;
         byRoot[rootLabel].projects[projLabel] = (byRoot[rootLabel].projects[projLabel] || 0) + tok;
@@ -2647,6 +3692,7 @@ class AnthropicUsageView extends obsidian.ItemView {
         ts: from,
         label: new Date(from).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' }),
         ...byM, total: Object.values(byM).reduce((a, b) => a + b, 0),
+        billed: billedOf({ input, output, cacheCreate, cacheRead }),
         input, output, reqs, cacheCreate, cacheRead,
         byRoot,
       });
@@ -2957,7 +4003,7 @@ class AnthropicUsageView extends obsidian.ItemView {
     ];
     const hist = BKTS.map(b => ({ label: b.label, count: 0 }));
     for (const e of entries) {
-      const t = e.usage.input_tokens + e.usage.output_tokens;
+      const t = billedEntry(e);
       const i = BKTS.findIndex(b => t < b.max);
       if (i >= 0) hist[i].count++;
     }
@@ -2967,7 +4013,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       const sid = e.sessionId || 'unknown';
       if (!sessMap[sid]) sessMap[sid] = { id: sid.slice(0, 8), first: e.timestamp, tokens: 0, reqs: 0, models: {} };
       const s = sessMap[sid];
-      s.tokens += e.usage.input_tokens + e.usage.output_tokens;
+      s.tokens += billedEntry(e);
       s.reqs++;
       const f = modelFamily(e.model); s.models[f] = (s.models[f] || 0) + 1;
     }
@@ -2982,7 +4028,7 @@ class AnthropicUsageView extends obsidian.ItemView {
     // d.day30 is already this exact sum (computed once in refresh(), see there) — reused
     // here instead of re-summing days30, so the cards and the underlying data can't drift
     // apart even if something between refresh() and this call ever changes the setting.
-    const totalTok    = d.day30.input + d.day30.output;
+    const totalTok    = billedOf(d.day30);
     const totalReqs   = d.day30.count;
     const activeDays  = days30.filter(x => x.reqs > 0).length;
     // Tokens per day actually worked, not per calendar day — a vacation gap in the report
@@ -3027,7 +4073,11 @@ class AnthropicUsageView extends obsidian.ItemView {
       // from reportPayload's pre-formatted strings, since the hero needs real numbers to compute
       // percentages against the empirical limit estimates above.
       currentWindow5h: d.window5h.total || 0,
-      todayTotal: (d.today.input || 0) + (d.today.output || 0),
+      todayTotal: billedOf(d.today),
+      // 29-day average per active day. Since 2.0 this is what "Today" is measured against —
+      // there is no daily limit to compare with, so the honest reference is the user's own
+      // normal. Same figure the sidebar heatmap and verdict glyphs already use.
+      avgDaily: d.avgDaily || 0,
       report: reportPayload,
       projects: this._computeProjectOverview(allDays),
     });
@@ -3100,8 +4150,12 @@ class AnthropicUsageView extends obsidian.ItemView {
 body{background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;line-height:1.5}
 .dash{max-width:1100px;margin:0 auto;padding:28px 20px 48px}
 header{margin-bottom:20px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.logo-header{display:flex;align-items:center;gap:8px}
-header h1{font-size:22px;font-weight:700;letter-spacing:-0.02em;background:linear-gradient(120deg,#4A90D9 0%,#9B5DE5 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+/* baseline + cap-height sizing, same rule as the sidebar logo — see LOGO_SVG. */
+.logo-header{display:flex;align-items:center;gap:10px}
+header h1{font-size:17px;font-weight:700;letter-spacing:-0.02em;color:#f1f5f9}
+/* "Usage" in the brand yellow, mirroring the logo lockup (v2.0) — the gradient-filled title
+   was dropped with the old blue palette; the monogram beside it carries the colour now. */
+header h1 .wm-accent{color:#FAB219}
 .meta{font-size:11px;color:#64748b;margin-top:4px}
 .hdr-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .tabs{display:flex;gap:4px;background:#1e293b;border:1px solid #334155;border-radius:6px;padding:2px}
@@ -3109,16 +4163,37 @@ header h1{font-size:22px;font-weight:700;letter-spacing:-0.02em;background:linea
 .tab-btn.active{background:#334155;color:#f1f5f9}
 select#periodSel{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-size:11px;font-weight:600;padding:5px 8px;border-radius:6px;font-family:inherit;cursor:pointer}
 .limit-hero{margin-bottom:20px}
-.hero-title{font-size:13px;font-weight:700;color:#f1f5f9;margin-bottom:10px}
-.hero-title-note{font-size:11px;font-weight:500;color:#64748b}
-.hero-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.hero-panel{background:#1e293b;border:1px solid #334155;border-top:3px solid #64748b;border-radius:8px;padding:14px 16px}
-.hero-label{font-size:10.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-.hero-main{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.hero-num{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1}
-.hero-sub{font-size:10.5px;color:#94a3b8;margin-top:8px;line-height:1.4}
-.hero-unavailable{font-size:11px;color:#64748b;line-height:1.5;padding:14px 0 4px}
-@media(max-width:900px){.hero-row{grid-template-columns:1fr}}
+/* AI Budget Status (v2.0 visual rework, from Bjoerns mockup). The shell carries a soft
+   coloured glow in the current zone hue. It is the one deliberately showy element on the
+   page: it answers "am I fine right now", which is why people open this dashboard. */
+.hero-shell{border-radius:14px;padding:18px 20px 20px;border:1px solid #334155;background:radial-gradient(130% 150% at 50% 0%,#17233a 0%,#111c2e 55%,#0f172a 100%)}
+.hero-shell-good{border-color:#0CA30C55;box-shadow:0 0 0 1px #0CA30C22,0 10px 36px -14px #0CA30C66}
+.hero-shell-warn{border-color:#FAB21955;box-shadow:0 0 0 1px #FAB21922,0 10px 36px -14px #FAB21966}
+.hero-shell-bad{border-color:#D03B3B55;box-shadow:0 0 0 1px #D03B3B22,0 10px 36px -14px #D03B3B66}
+.hero-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.hero-title{font-size:17px;font-weight:700;color:#f1f5f9;letter-spacing:-.01em}
+.hero-title-note{font-size:11px;font-weight:500;color:#64748b;margin-top:2px}
+.hero-zone{display:flex;align-items:center;gap:9px;border:1px solid;border-radius:10px;padding:8px 13px}
+.hero-zone-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.hero-zone-txt{font-size:11.5px;font-weight:700;letter-spacing:.04em}
+.hero-zone-sub{font-size:10.5px;color:#94a3b8;margin-top:1px}
+.hero-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.hero-panel{background:#16233a;border:1px solid #2b3a52;border-radius:12px;padding:15px 16px 14px}
+.hero-label{font-size:13px;font-weight:700;color:#f1f5f9}
+.hero-caption{font-size:10.5px;color:#64748b;margin:1px 0 12px}
+.hero-main{display:flex;align-items:center;gap:16px}
+.ring{flex-shrink:0}
+.hero-figures{min-width:0;flex:1}
+.hero-num{font-size:21px;font-weight:800;color:#f1f5f9;font-variant-numeric:tabular-nums;line-height:1.1}
+.hero-num-unit{font-size:11px;font-weight:600;color:#94a3b8}
+.hero-target{font-size:11px;color:#64748b;margin-top:1px}
+.hero-bar{height:6px;background:#0b1220;border-radius:3px;overflow:hidden;margin:9px 0}
+.hero-bar-fill{height:100%;border-radius:3px;transition:width .4s ease}
+.hero-pill{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;border:1px solid;border-radius:20px;padding:3px 10px}
+.hero-dot{width:7px;height:7px;border-radius:50%}
+.hero-sub{font-size:10.5px;color:#94a3b8;margin-top:11px;line-height:1.45;padding-top:10px;border-top:1px solid #2b3a52}
+.hero-unavailable{font-size:11px;color:#64748b;line-height:1.5;padding:10px 0 4px}
+@media(max-width:1000px){.hero-row{grid-template-columns:1fr}}
 .kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px}
 .kpi-card{background:#1e293b;border:1px solid #334155;border-left:3px solid #64748b;border-radius:8px;padding:12px 14px;min-height:104px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .kpi-label{font-size:9.5px;color:#64748b;text-transform:uppercase;letter-spacing:.06em}
@@ -3136,8 +4211,12 @@ select#periodSel{background:#1e293b;border:1px solid #334155;color:#e2e8f0;font-
 .week-hdr h2{font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.06em}
 .week-verdict{font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px}
 .week-bar{display:flex;gap:6px;margin-bottom:10px}
-.week-day{flex:1;height:40px;border-radius:5px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:9px;color:#f8fafc;text-shadow:0 1px 2px rgba(0,0,0,.5)}
-.week-day.future{background:#1e293b!important;border:1px dashed #334155;color:#475569;text-shadow:none}
+/* Each day is a bucket the fill rises inside: height = magnitude, colour = verdict (v2.0). */
+.week-day{position:relative;flex:1;height:46px;border-radius:5px;overflow:hidden;background:#16233a;border:1px solid #2b3a52}
+.week-fill{position:absolute;left:0;right:0;bottom:0;transition:height .4s ease}
+.week-txt{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:9px;color:#f8fafc;text-shadow:0 1px 3px rgba(0,0,0,.75)}
+.week-day.future{background:#131f33;border:1px dashed #2b3a52}
+.week-day.future .week-txt{color:#475569;text-shadow:none}
 .week-day.current{outline:2px solid #f1f5f9;outline-offset:1px}
 .week-foot{font-size:11px;color:#94a3b8;line-height:1.6}
 .tabpane{display:none}
@@ -3161,12 +4240,35 @@ tr:hover td{background:rgba(255,255,255,.03)}
 .cache-explain strong{color:#f1f5f9}
 .cache-explain .hint{margin-top:10px;font-size:11px;color:#64748b;line-height:1.6}
 .report-section{margin-bottom:16px}
+/* CSV export menu (v2.0) — sits in the header next to the tabs. Sized and coloured like the
+   period select beside it so the header reads as one row of controls. */
+.csv-menu{position:relative;display:inline-block}
+.csv-trigger{background:#1e293b;border:1px solid #334155;color:#cbd5e1;border-radius:6px;
+  font-size:12px;font-weight:600;padding:6px 12px;cursor:pointer;white-space:nowrap;
+  transition:color .15s,border-color .15s,background .15s}
+.csv-trigger:hover{color:#199E70;border-color:#199E70}
+.csv-menu.open .csv-trigger{color:#199E70;border-color:#199E70}
+.csv-caret{font-size:9px;opacity:.7;margin-left:2px}
+.csv-dropdown{display:none;position:absolute;top:calc(100% + 4px);right:0;z-index:50;
+  min-width:190px;background:#1e293b;border:1px solid #334155;border-radius:8px;padding:4px;
+  box-shadow:0 8px 24px rgba(0,0,0,.45)}
+.csv-menu.open .csv-dropdown{display:block}
+.csv-dropdown button{display:block;width:100%;text-align:left;background:none;border:0;
+  color:#cbd5e1;font-size:12px;padding:7px 10px;border-radius:5px;cursor:pointer}
+.csv-dropdown button:hover{background:#334155;color:#f1f5f9}
+.csv-sep{height:1px;background:#334155;margin:4px 6px}
+/* Names the destination inside the menu (02.10.2026). The Dashboard is a browser page, so it
+   can only hand the file to the browser; it cannot choose a folder. Saying so where the click
+   happens beats letting the user go looking afterwards. */
+.csv-hint{font-size:10.5px;color:#94a3b8;padding:5px 10px 6px;line-height:1.35}
+.csv-hint-alt{color:#64748b;max-width:210px}
+.csv-dropdown{min-width:230px}
 /* Projects Overview — sub-project detail (v1.8) */
 .proj-toggle{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:#cbd5e1;margin-bottom:6px;cursor:pointer;user-select:none}
 .proj-toggle input{cursor:pointer}
 .proj-detail-note{font-size:11px;color:#64748b;line-height:1.5;margin:2px 0 12px}
 .proj-vault-row.has-sub td:first-child{cursor:pointer}
-.proj-caret{display:inline-block;width:13px;color:#4A90D9;font-size:11px}
+.proj-caret{display:inline-block;width:13px;color:#3987E5;font-size:11px}
 .lead-spacer{display:inline-block;width:13px}
 .proj-subcount{color:#64748b;font-weight:400;font-size:11px;margin-left:7px}
 .proj-subrow td{background:rgba(74,144,217,.055);font-size:11px;color:#94a3b8;border-bottom:1px solid #182234}
@@ -3184,13 +4286,18 @@ tr:hover td{background:rgba(255,255,255,.03)}
   <header>
     <div>
       <div class="logo-header">
-        <svg width="20" height="17" viewBox="0 0 15 12" fill="none" aria-hidden="true">
-          <rect x="0"    y="7" width="2.5" height="5"  rx="0.6" fill="#4A90D9" opacity="0.45"/>
-          <rect x="3.5"  y="3" width="2.5" height="9"  rx="0.6" fill="#4A90D9" opacity="0.65"/>
-          <rect x="7"    y="0" width="2.5" height="12" rx="0.6" fill="#4A90D9"/>
-          <rect x="10.5" y="4" width="2.5" height="8"  rx="0.6" fill="#9B5DE5" opacity="0.80"/>
+        <!-- Sized just under the h1's cap height, same rule as LOGO_SVG. -->
+        <svg width="39" height="23.9" viewBox="0.4 2.6 23.3 14.3" fill="none" aria-hidden="true" style="display:block">
+          <defs>
+            <linearGradient id="tuUDash" x1="14.3" y1="3" x2="22.3" y2="16" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#FAB219"/>
+              <stop offset="1" stop-color="#D03B3B"/>
+            </linearGradient>
+          </defs>
+          <path d="M1.8 4 H10.8 M6.3 4 V15.5" stroke="#0CA30C" stroke-width="2.8" stroke-linecap="round"/>
+          <path d="M14.3 4 V11.5 A4 4 0 0 0 22.3 11.5 V4" stroke="url(#tuUDash)" stroke-width="2.8" stroke-linecap="round"/>
         </svg>
-        <h1>Token Usage Dashboard</h1>
+        <h1>Token <span class="wm-accent">Usage</span> Dashboard</h1>
       </div>
       <div class="meta">Snapshot generated ${generated} &nbsp;·&nbsp; Plugin v${version} &nbsp;·&nbsp; <a href="https://www.langeatn.de/media/token-usage/" target="_blank" rel="noopener" style="color:#C9A227;text-decoration:none;">Help &amp; Glossary ↗</a></div>
     </div>
@@ -3199,6 +4306,19 @@ tr:hover td{background:rgba(255,255,255,.03)}
         <button class="tab-btn active" id="tabBtnDash" onclick="showTab('dash')">Dashboard</button>
         <button class="tab-btn" id="tabBtnReports" onclick="showTab('reports')">Reports</button>
         <button class="tab-btn" id="tabBtnProjects" onclick="showTab('projects')">Projects</button>
+      </div>
+      <div class="csv-menu" id="csvMenu">
+        <button class="csv-trigger" id="csvTrigger" title="Export data as CSV">CSV Export <span class="csv-caret">▾</span></button>
+        <div class="csv-dropdown" id="csvDropdown">
+          <div class="csv-hint">Downloads to your browser folder</div>
+          <button data-csv="projects">Projects Overview</button>
+          <button data-csv="daily">Daily Detail</button>
+          <button data-csv="kpis">Key figures</button>
+          <div class="csv-sep"></div>
+          <button data-csv="all">All three files</button>
+          <div class="csv-sep"></div>
+          <div class="csv-hint csv-hint-alt">For files inside your vault instead, use the CSV button in the Obsidian sidebar.</div>
+        </div>
       </div>
       <select id="periodSel" onchange="applyPeriod(this.value)">
         <option value="30">30 days</option>
@@ -3239,12 +4359,12 @@ tr:hover td{background:rgba(255,255,255,.03)}
     </div>
     <div class="cb">
       <h2>Rate limits</h2>
-      <div id="rlEst" style="margin-bottom:14px;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:6px;border-left:3px solid #52B788;font-size:12px;line-height:1.7;color:#cbd5e1"></div>
+      <div id="rlEst" style="margin-bottom:14px;padding:10px 14px;background:rgba(255,255,255,0.03);border-radius:6px;border-left:3px solid #199E70;font-size:12px;line-height:1.7;color:#cbd5e1"></div>
       <table><thead><tr><th>Date</th><th>Time</th><th>Type</th><th>Tokens (inp+out)</th><th>Resets at</th></tr></thead>
       <tbody id="tRL"></tbody></table>
     </div>
     <div class="cb">
-      <h2>Weekly consumption — billing week (Sun 18:00 → Sun 18:00 Europe/Berlin)</h2>
+      <h2>Weekly consumption — billing week <span id="weekWindowNote" class="live-note"></span></h2>
       <canvas id="cWeekly" height="90"></canvas>
     </div>
     <div class="cb">
@@ -3264,8 +4384,11 @@ tr:hover td{background:rgba(255,255,255,.03)}
 </div>
 <script>
 var D=${safeJson};
-var C={Haiku:'#06B6D4',Sonnet:'#4A90D9',Opus:'#9B5DE5',Fable:'#E9C46A',Other:'#6B7280'};
-var VERDICT_HEX={good:'#52B788',warn:'#F59E0B',bad:'#EF4444',neutral:'#6B7280'};
+// Must stay identical to MODEL_COLORS in the plugin above — the sidebar and the dashboard keep
+// separate copies (the dashboard is a standalone HTML file), so a change in one without the
+// other would show the same model in two different colours.
+var C={Haiku:'#0D9488',Sonnet:'#4A90E2',Opus:'#EC4899',Fable:'#A855F7',Other:'#6B7280'};
+var VERDICT_HEX={good:'#0CA30C',warn:'#FAB219',bad:'#D03B3B',neutral:'#6B7280'};
 function fN(n){if(!n)return'0';if(n>=1e9)return(n/1e9).toFixed(2)+'B';if(n>=1e6)return(n/1e6).toFixed(2)+'M';if(n>=1e3)return(n/1e3).toFixed(1)+'K';return String(n);}
 Chart.defaults.color='#94a3b8';Chart.defaults.borderColor='rgba(255,255,255,0.07)';
 
@@ -3300,33 +4423,80 @@ function gaugeSvg(pct, color){
     +'<text x="28" y="32" text-anchor="middle" font-size="12" font-weight="700" fill="#f1f5f9">'+Math.round(pct)+'%</text>'
     +'</svg>';
 }
+
+// Big donut ring for the budget panels (v2.0, from Björn's mockup). Same maths as gaugeSvg,
+// scaled up and with the percentage set as the panel's headline figure rather than a caption.
+// Over 100% the ring stays full and turns critical — it must not wrap around and read as a
+// fresh, low value.
+function ringSvg(pct, color, size){
+  var s = size || 112;
+  var stroke = Math.round(s * 0.085);
+  var r = (s - stroke) / 2 - 2;
+  var c = 2 * Math.PI * r;
+  var dash = (Math.max(0, Math.min(100, pct)) / 100) * c;
+  var mid = s / 2;
+  var id = 'rg' + Math.round(pct) + Math.round(s) + color.replace('#','');
+  return '<svg class="ring" width="'+s+'" height="'+s+'" viewBox="0 0 '+s+' '+s+'">'
+    + '<defs><filter id="'+id+'" x="-50%" y="-50%" width="200%" height="200%">'
+    + '<feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/>'
+    + '<feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'
+    + '<circle cx="'+mid+'" cy="'+mid+'" r="'+r+'" fill="none" stroke="#1e293b" stroke-width="'+stroke+'"/>'
+    + '<circle cx="'+mid+'" cy="'+mid+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+stroke+'"'
+    + ' stroke-dasharray="'+dash.toFixed(1)+' '+c.toFixed(1)+'" stroke-linecap="round"'
+    + ' transform="rotate(-90 '+mid+' '+mid+')" filter="url(#'+id+')"/>'
+    + '<text x="'+mid+'" y="'+(mid + s*0.09)+'" text-anchor="middle" font-size="'+(s*0.23)+'"'
+    + ' font-weight="700" fill="#f1f5f9">'+Math.round(pct)+'<tspan font-size="'+(s*0.13)+'">%</tspan></text>'
+    + '</svg>';
+}
 function focusMiniRow(label,val,color){
   return '<div class="focus-mini-row"><span class="focus-mini-lbl">'+label+'</span><div class="focus-mini-track"><div class="focus-mini-fill" style="width:'+val+'%;background:'+color+'"></div></div></div>';
 }
-function intensityColorJs(ratio, isCurrent){
-  var r,g,b;
-  if(ratio<=0){r=51;g=65;b=85;}
-  else if(ratio<0.5){var t=ratio*2;r=Math.round(82+(245-82)*t);g=Math.round(183+(158-183)*t);b=Math.round(136+(11-136)*t);}
-  else{var t=(ratio-0.5)*2;r=Math.round(245+(229-245)*t);g=Math.round(158+(80-158)*t);b=Math.round(11+(80-11)*t);}
-  return 'rgba('+r+','+g+','+b+','+(isCurrent?1:0.75)+')';
-}
+// intensityColorJs() removed in v2.0. Its last caller was the billing-week bar, which coloured
+// days by their share of the week's BIGGEST day — a relative scale wearing status colours, so
+// the busiest day always came out red regardless of whether it was a problem. That bar now
+// judges each day against the user own average instead, and nothing else needed a continuous
+// ramp, so the function went with it.
 
 // Limit Hero (v1.9) — the three empirical numbers Anthropic never publishes, given the
 // prominent top-of-dashboard treatment they were previously missing (session estimate used to
 // be buried in the Rate Limits table further down; weekly only had one KPI card among five).
 // Deliberately shows CURRENT status, not a forecast — renderKpiRow()'s "Limit Health" card
 // already covers the forecast angle, this covers "where do I actually stand right now".
-function heroPanel(label, current, target, sub, unavailableText){
+// Budget panel (v2.0 visual rework, from Björn's mockup): a large ring carrying the percentage,
+// the raw figure and its target beside it, a progress bar underneath and a state pill. Same
+// numbers as before — only the presentation changed, nothing new is computed or estimated.
+var ZONE_LABEL = { good: 'Safe', warn: 'Close', bad: 'Over' };
+
+function heroPanel(label, caption, current, target, sub, unavailableText, bands){
   if (target == null || target <= 0) {
     return '<div class="hero-panel"><div class="hero-label">'+label+'</div>'
+      +'<div class="hero-caption">'+caption+'</div>'
       +'<div class="hero-unavailable">'+unavailableText+'</div></div>';
   }
   var pct = (current/target)*100;
-  var verdict = pct<=80?'good':(pct<=100?'warn':'bad');
+  // Two band sets, because two different questions (see renderLimitHero). Against a LIMIT,
+  // 100% is the ceiling. Against your own AVERAGE, 100% is an ordinary day — judging that by
+  // limit bands would mark every normal day as critical.
+  var b = bands || 'limit';
+  var verdict = (b === 'average')
+    ? (pct<=150?'good':(pct<=200?'warn':'bad'))
+    : (pct<=80 ?'good':(pct<=100?'warn':'bad'));
   var color = VERDICT_HEX[verdict];
-  return '<div class="hero-panel" style="border-top-color:'+color+'">'
+  var barW = Math.max(0, Math.min(100, pct));
+  return '<div class="hero-panel hero-'+verdict+'">'
     +'<div class="hero-label">'+label+'</div>'
-    +'<div class="hero-main"><div class="hero-num" style="color:'+color+'">'+fN(current)+'</div>'+gaugeSvg(pct,color)+'</div>'
+    +'<div class="hero-caption">'+caption+'</div>'
+    +'<div class="hero-main">'
+      + ringSvg(pct, color, 112)
+      +'<div class="hero-figures">'
+        +'<div class="hero-num">'+fN(current)+' <span class="hero-num-unit">used</span></div>'
+        +'<div class="hero-target">/ '+fN(Math.round(target))+'</div>'
+        +'<div class="hero-bar"><div class="hero-bar-fill" style="width:'+barW+'%;background:'+color+'"></div></div>'
+        +'<span class="hero-pill" style="color:'+color+';border-color:'+color+'44;background:'+color+'1a">'
+          +'<span class="hero-dot" style="background:'+color+'"></span>'+ZONE_LABEL[verdict]
+        +'</span>'
+      +'</div>'
+    +'</div>'
     +'<div class="hero-sub">'+sub+'</div>'
     +'</div>';
 }
@@ -3334,37 +4504,84 @@ function renderLimitHero(){
   var RL=D.rateLimit, ws=D.weekStatus;
   var se = RL && RL.sessionEst;
   var sessionHtml = heroPanel(
-    'Current 5h Session',
+    // "Window", not "Session" (04.10.2026). The sidebar was corrected to the same wording:
+    // calling it a session invites the reading we abolished on 02.10. — that this is simply
+    // "the last five hours". It is an anchored window with a real start time.
+    'Current 5h Window', 'vs. observed 5h limit',
     D.currentWindow5h,
     se ? se.median : null,
-    se ? (fN(D.currentWindow5h)+' of ~'+fN(se.median)+' median &nbsp;·&nbsp; range '+fN(se.min)+'–'+fN(se.max)+' from '+se.n+' observed hits') : '',
-    'Not enough observed session-limit hits yet (need &gt; 50K tokens in a 5h window when one is hit).'
+    se ? ('median ~'+fN(se.median)+' &nbsp;·&nbsp; '+(se.bandLow&&se.bandHigh ? 'usually '+fN(se.bandLow)+'–'+fN(se.bandHigh)+' (middle half)' : 'range '+fN(se.min)+'–'+fN(se.max))+' from '+se.n+' observed hits') : '',
+    'Not enough observed 5h-limit hits yet (need &gt; 50K tokens in a 5h window when one is hit).'
   );
-  var dailyShare = ws.weeklyLimitEst ? ws.weeklyLimitEst/7 : null;
+  // There is NO daily limit (corrected 01.10.2026). Anthropic enforces an anchored 5-hour window
+  // and a weekly cap, nothing in between — so the former "fair daily share" (weeklyLimitEst / 7)
+  // was a number we made up. Today is now measured against the user's own 29-day average per
+  // active day: it claims no quota, it reports whether today is busier or quieter than usual.
+  // Calendar day, matching the sidebar (fixed 02.10.2026). This panel used to take the current
+  // 24-hour slice of the billing week, which ran reset-hour to reset-hour. That was correct while
+  // Today was measured against a daily share of the weekly limit — the share and the slice had to
+  // use the same span. The share turned out to be invented and is gone, so the panel compares
+  // against the user's own daily average now, and the honest span is the one the word promises.
+  // Leaving it on the slice also meant the Dashboard and the sidebar printed different numbers
+  // under the same label.
+  var dailyBase  = D.avgDaily || null;
   var dailyHtml = heroPanel(
-    'Today vs. Fair Daily Share',
-    D.todayTotal,
-    dailyShare,
-    dailyShare ? (fN(D.todayTotal)+' of ~'+fN(Math.round(dailyShare))+' &nbsp;·&nbsp; est. weekly limit &divide; 7') : '',
-    'Needs a weekly-limit estimate first (see the Weekly panel).'
+    'Today', 'vs. your usual day &nbsp;·&nbsp; calendar day, since midnight',
+    D.todayTotal || 0,
+    dailyBase,
+    dailyBase ? ('your 29-day average per active day — not a limit, Anthropic has none for days') : '',
+    'Not enough history yet to know what a usual day looks like for you.',
+    'average'
   );
   var weeklyHtml = heroPanel(
-    'This Billing Week',
+    'This Week', 'vs. est. weekly limit',
     ws.soFar,
     ws.weeklyLimitEst,
-    ws.weeklyLimitEst ? (fN(ws.soFar)+' of ~'+fN(ws.weeklyLimitEst)+' estimated &nbsp;·&nbsp; '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left') : '',
+    ws.weeklyLimitEst ? (ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left in this billing week') : '',
     'No weekly-limit hit observed yet in the last 30 days.'
   );
+
+  // Overall zone = worst of the REAL limits only: the 5-hour window and the weekly cap. The
+  // Today panel is deliberately excluded (01.10.2026) — it measures against the user's own
+  // average, not a limit, so a merely busy day must not turn the banner amber. The banner
+  // answers "how close am I to a limit", and a day cannot be close to a limit that has
+  // never existed.
+  var worst = 'good';
+  [[D.currentWindow5h, se && se.median], [ws.soFar, ws.weeklyLimitEst]]
+    .forEach(function(p){
+      if (!p[1]) return;
+      var q = (p[0]/p[1])*100;
+      var v = q<=80?'good':(q<=100?'warn':'bad');
+      if (v==='bad' || (v==='warn' && worst==='good')) worst = v;
+    });
+  var zoneText = { good:'GREEN ZONE', warn:'AMBER ZONE', bad:'RED ZONE' }[worst];
+  var zoneSub  = { good:"You're well within your limits.",
+                   warn:'Approaching one of your limits.',
+                   bad:'At or past an estimated limit.' }[worst];
+  var zoneCol  = VERDICT_HEX[worst];
+
   document.getElementById('limitHero').innerHTML =
-    '<div class="hero-title">Where you actually stand <span class="hero-title-note">— empirical, not published by Anthropic, and gets more precise the more you use Claude Code</span></div>'
-    + '<div class="hero-row">' + sessionHtml + dailyHtml + weeklyHtml + '</div>';
+      '<div class="hero-shell hero-shell-'+worst+'">'
+    +   '<div class="hero-head">'
+    +     '<div>'
+    +       '<div class="hero-title">AI Budget Status</div>'
+    +       '<div class="hero-title-note">Live usage against your limits — empirical, not published by Anthropic</div>'
+    +     '</div>'
+    +     '<div class="hero-zone" style="border-color:'+zoneCol+'55;background:'+zoneCol+'14">'
+    +       '<span class="hero-zone-dot" style="background:'+zoneCol+'"></span>'
+    +       '<div><div class="hero-zone-txt" style="color:'+zoneCol+'">'+zoneText+'</div>'
+    +       '<div class="hero-zone-sub">'+zoneSub+'</div></div>'
+    +     '</div>'
+    +   '</div>'
+    +   '<div class="hero-row">' + sessionHtml + dailyHtml + weeklyHtml + '</div>'
+    + '</div>';
 }
 
 function renderKpiRow(){
   var ws=D.weekStatus, fs=D.focusScore;
   var pastTokens=ws.days.filter(function(d){return d.status!=='future';}).map(function(d){return d.tokens;});
-  var wfSpark=sparklineSvg(pastTokens.length>1?pastTokens:[0,0],'#4A90D9');
-  var wfCard='<div class="kpi-card" style="border-left-color:#4A90D9"><div><div class="kpi-label">Weekly Forecast</div>'
+  var wfSpark=sparklineSvg(pastTokens.length>1?pastTokens:[0,0],'#3987E5');
+  var wfCard='<div class="kpi-card" style="border-left-color:#3987E5"><div><div class="kpi-label">Weekly Forecast</div>'
     +'<div class="kpi-val">'+fN(ws.forecast)+'</div><div class="kpi-sub">so far '+fN(ws.soFar)+'</div></div>'+wfSpark+'</div>';
 
   var lhColor=VERDICT_HEX[ws.verdict]||VERDICT_HEX.neutral;
@@ -3374,37 +4591,87 @@ function renderKpiRow(){
   var lhGauge = ws.weeklyLimitEst ? gaugeSvg(ws.pct||0,lhColor) : '';
   var lhCard='<div class="kpi-card" style="border-left-color:'+lhColor+'"><div><div class="kpi-label">Limit Health</div>'+lhBody+'</div>'+lhGauge+'</div>';
 
-  var ceCard='<div class="kpi-card" id="kpiCache" style="border-left-color:#52B788"></div>';
-  var dvCard='<div class="kpi-card" id="kpiVelocity" style="border-left-color:#F59E0B"></div>';
+  var ceCard='<div class="kpi-card" id="kpiCache" style="border-left-color:#0CA30C"></div>';
+  var dvCard='<div class="kpi-card" id="kpiVelocity" style="border-left-color:#9085E9"></div>';
 
   var fsColor=fs.color;
   var fsCard='<div class="kpi-card" style="border-left-color:'+fsColor+'"><div style="width:100%"><div class="kpi-label">Focus Score</div>'
     +'<div class="kpi-val">'+fs.score+'<span style="font-size:11px;color:#64748b">/100</span></div>'
     +'<span class="kpi-badge" style="background:'+fsColor+'22;color:'+fsColor+'">'+fs.badge+'</span>'
     +'<div class="focus-mini">'
-    +focusMiniRow('Cache',fs.components.cache,'#9B5DE5')
-    +focusMiniRow('Cont.',fs.components.continuity,'#4A90D9')
-    +focusMiniRow('Depth',fs.components.depth,'#52B788')
+    +focusMiniRow('Cache',fs.components.cache,'#199E70')
+    +focusMiniRow('Cont.',fs.components.continuity,'#3987E5')
+    +focusMiniRow('Depth',fs.components.depth,'#9085E9')
     +'</div></div></div>';
 
   document.getElementById('kpiRow').innerHTML = wfCard+lhCard+ceCard+dvCard+fsCard;
 }
 
+// The weekly reset is a fixed moment in UTC (Sunday 16:00), so its LOCAL clock time shifts with
+// daylight saving: 18:00 in summer, 17:00 in winter. Every label used to say "18:00" outright,
+// which would quietly go an hour wrong at the end of October. Derived from the actual instant
+// instead, so it is right in both halves of the year and in any timezone.
+function resetClockLocal(){
+  var d = new Date();
+  d.setUTCHours(16, 0, 0, 0);
+  while (d.getUTCDay() !== 0) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
 function renderWeekBar(){
   var ws=D.weekStatus;
-  // Billing-week buckets run 18:00→18:00 (Sunday 18:00 CEST/CET reset), not local midnight,
-  // so the bucket containing "now" technically started the evening before — e.g. at 2pm on a
-  // Friday, the bucket accumulating today's tokens began Thursday 18:00. Labeling it "Thu"
-  // would read as wrong to anyone glancing at the bar, so the current bucket always shows
-  // "Today" instead of its technical start-weekday. The totals themselves are unaffected —
-  // this only changes the label, not which hours count toward the billing week.
-  var lbls=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  var maxTok=Math.max.apply(null, ws.days.map(function(d){return d.tokens;}).concat([1]));
+  var resetAt = resetClockLocal();
+  var noteEl = document.getElementById('weekWindowNote');
+  if (noteEl) noteEl.textContent = '(Sun ' + resetAt + ' → Sun ' + resetAt + ', your local time)';
+  // Billing-week buckets run 18:00→18:00 (Sunday 18:00 reset), not local midnight. Each bucket
+  // is therefore named after the day it ENDS on, not the one it starts on — that is the day it
+  // mostly consists of: the Wed 18:00→Thu 18:00 bucket holds 18 of Thursday's hours against
+  // only 6 of Wednesday's, so it is the Thursday column.
+  //
+  // Fixed 01.10.2026 (Björn: "Heute ist Donnerstag und Thursday ist farblos"). Naming buckets
+  // by their start day shifted the whole week back by one, so on a Thursday morning the live
+  // bucket sat in the Wednesday slot and the Thursday column stood empty — the current day
+  // appeared to have no data at all. The totals were always right; only the labels were off.
+  var lbls=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  // Day colour = that day against the USER OWN AVERAGE, not against the week's biggest day
+  // (fixed v2.0, spotted by Björn 01.10.2026). The old version divided by the week's maximum,
+  // so the busiest day was always red even at 18% of the weekly limit — a red bar sitting
+  // directly under a green "well within your limits" banner. Status colours have to mean a
+  // verdict, and the only honest verdict here is "how did this day compare to what a day may
+  // fairly use". With no weekly estimate there is nothing to judge against, so the bars stay
+  // neutral rather than inventing a scale.
+  // Two channels, two questions — the fix to the fix (Björn, 01.10.2026: "warum ist jetzt alles
+  // grün?"). Colouring purely by verdict made every day green at 18% of the weekly limit, which
+  // is correct but says nothing about WHICH day was heavy. Colouring by relative height, as the
+  // original did, made the busiest day red even when it was harmless. So:
+  //   FILL HEIGHT = how much (relative to the week's biggest day) — magnitude
+  //   COLOUR      = how does it rate against your own usual day — verdict
+  // Neither channel has to lie about the other, and the bar answers both questions at once.
+  // Colour = each day against the user's OWN average, not against a daily quota — there is no
+  // daily quota (corrected 01.10.2026). Bands are the average bands (1.5x busier, 2x spike),
+  // not the limit bands, because an ordinary day sits at roughly 100% here.
+  var dailyBase = D.avgDaily || null;
+  var maxTok = Math.max.apply(null, ws.days.map(function(d){ return d.tokens; }).concat([1]));
   var html=ws.days.map(function(d,i){
     var cls='week-day'+(d.status==='future'?' future':'')+(d.status==='current'?' current':'');
-    var bg = d.status==='future' ? 'transparent' : intensityColorJs(d.tokens/maxTok, d.status==='current');
+    var col;
+    if (!d.tokens)       col = '#2b3a52';
+    else if (!dailyBase) col = '#475569';   // no history yet — neutral, not a guess
+    else {
+      var q = (d.tokens / dailyBase) * 100;
+      col = VERDICT_HEX[q <= 150 ? 'good' : (q <= 200 ? 'warn' : 'bad')];
+    }
+    // Floor of 6% so a day with little but non-zero usage still shows a sliver rather than
+    // reading as "nothing happened".
+    var fillPct = d.status === 'future' ? 0
+                : (d.tokens ? Math.max(6, (d.tokens / maxTok) * 100) : 0);
     var lbl = d.status==='current' ? 'Today' : lbls[i];
-    return '<div class="'+cls+'" style="background:'+bg+'"><span>'+lbl+'</span>'+(d.status!=='future'?('<span>'+fN(d.tokens)+'</span>'):'')+'</div>';
+    var share = (dailyBase && d.tokens) ? Math.round((d.tokens/dailyBase)*100) + '% of your usual day' : '';
+    return '<div class="'+cls+'" title="'+(share||'no activity')+'">'
+      + '<div class="week-fill" style="height:'+fillPct.toFixed(1)+'%;background:'+col+'"></div>'
+      + '<div class="week-txt"><span>'+lbl+'</span>'
+      + (d.status!=='future' ? ('<span>'+fN(d.tokens)+'</span>') : '') + '</div>'
+      + '</div>';
   }).join('');
   document.getElementById('weekBar').innerHTML=html;
   var vEl=document.getElementById('weekVerdict');
@@ -3413,7 +4680,7 @@ function renderWeekBar(){
   vEl.style.background=VERDICT_HEX[ws.verdict]+'22';
   vEl.style.color=VERDICT_HEX[ws.verdict];
   var foot = ws.weeklyLimitEst
-    ? ('Forecast '+fN(ws.forecast)+' of an estimated '+fN(ws.weeklyLimitEst)+' tokens by Sunday 18:00 &nbsp;·&nbsp; '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left in this billing week.')
+    ? ('Forecast '+fN(ws.forecast)+' of an estimated '+fN(ws.weeklyLimitEst)+' tokens by Sunday '+resetAt+' &nbsp;·&nbsp; '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left in this billing week. Each bar is a 24-hour slice of that week, running '+resetAt+' to '+resetAt+' so the seven of them tile the week exactly. Anthropic measures no day at all.')
     : ('No weekly-limit hit observed yet, so there is nothing to compare against. '+fN(ws.soFar)+' tokens so far this billing week, '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left.');
   document.getElementById('weekFoot').innerHTML=foot;
 }
@@ -3444,7 +4711,12 @@ function applyPeriod(nStr){
   document.getElementById('dailyChartTitle').textContent = 'Daily token usage — '+n+' days (by model)';
   document.getElementById('cacheCardsTitle').innerHTML = 'Cache efficiency &amp; usage patterns <span class="live-note">('+n+' days)</span>';
 
-  var ceColor = cache.ratio>=8?'#52B788':cache.ratio>=3?'#4A90D9':cache.ratio>=1?'#F59E0B':'#9B5DE5';
+  // Status role (v2.0) — cache efficiency is a verdict, so it uses the status palette, not
+  // token-type colours (the old scale ran green, Input blue, amber, Opus purple, mixing both
+  // roles). Same four steps as the focus score, so the two verdicts never disagree on what a
+  // colour means. The middle steps are a scale, not an alarm — the badge text beside them
+  // ("Balanced", "Exploratory") carries the actual wording.
+  var ceColor = cache.ratio>=8?'#0CA30C':cache.ratio>=3?'#FAB219':cache.ratio>=1?'#EC835A':'#6B7280';
   var ceLabel = cache.ratio>=8?'Deep focus':cache.ratio>=3?'Balanced':cache.ratio>=1?'Exploratory':'Minimal reuse';
   var spark14c = slice.slice(-14).map(function(d){ return (d.cacheCreate>0)?(d.cacheRead/d.cacheCreate):0; });
   var kpiCache = document.getElementById('kpiCache');
@@ -3456,11 +4728,26 @@ function applyPeriod(nStr){
     + '<span class="kpi-badge" style="background:'+ceColor+'22;color:'+ceColor+'">'+ceLabel+'</span></div>'
     + sparklineSvg(spark14c,ceColor);
 
+  // Snapshot for the KPI CSV export (v2.0) — stored here rather than recomputed in the export
+  // itself, so the file can never disagree with the cards currently on screen. Every value is
+  // raw; formatting stays a display concern.
+  lastKpis = {
+    periodDays: n,
+    totalTokens: totalTok,
+    apiCalls: totalReqs,
+    activeDays: activeDays,
+    avgPerActiveDay: avgPerActiveDay,
+    cacheRatio: cache.ratio,
+    cacheLabel: ceLabel,
+    cacheCreate: cache.create,
+    cacheRead: cache.read,
+  };
+
   var spark14v = slice.slice(-14).map(function(d){ return (d.input||0)+(d.output||0); });
   document.getElementById('kpiVelocity').innerHTML =
       '<div><div class="kpi-label">Daily Velocity ('+n+' days)</div><div class="kpi-val">'+fN(avgPerActiveDay)+'</div>'
     + '<div class="kpi-sub">tokens / active day</div></div>'
-    + sparklineSvg(spark14v,'#F59E0B');
+    + sparklineSvg(spark14v,'#9085E9');
 
   var models=['Haiku','Sonnet','Opus','Fable','Other'];
   var used=models.filter(function(m){return slice.some(function(d){return d[m]>0;});});
@@ -3472,7 +4759,9 @@ function applyPeriod(nStr){
   document.getElementById('ccRead').textContent=fN(cache.read);
   document.getElementById('ccRatio').textContent=cache.ratio+'x';
   var rc=document.getElementById('ccRatioCard'); var r=cache.ratio;
-  rc.style.borderColor = r>=8?'#52B788':r>=3?'#4A90D9':r>=1?'#F59E0B':r>0?'#9B5DE5':'#334155';
+  // Same status steps as ceColor above — deliberately identical thresholds and hexes, so the
+  // card border and the KPI tile can never show a different verdict for the same ratio.
+  rc.style.borderColor = r>=8?'#0CA30C':r>=3?'#FAB219':r>=1?'#EC835A':r>0?'#6B7280':'#334155';
   var h='',t='';
   if(!cache.create&&!cache.read){h='No cache data.';t='No cache tokens recorded in the last '+n+' days.';}
   else if(r>=8){h='Deep focus mode.';t='You work intensely with the same context. Docs, artifacts or long chats are reused heavily — the model reads from cache instead of reprocessing. Efficient and cost-effective.';}
@@ -3482,7 +4771,7 @@ function applyPeriod(nStr){
   var hint='Cache Write costs ~1.25× regular input — you pay a premium to store the context. Cache Read costs ~0.10× — 10× cheaper to reuse than reprocess. The Reuse Factor (Read ÷ Write) shows whether your investment in caching is paying off.';
   document.getElementById('ccExplain').innerHTML='<strong>'+h+'</strong> '+t+'<div class="hint">'+hint+'</div>';
 
-  var cacheChartData={labels:slice.map(function(d){return d.label;}),datasets:[{label:'Cache Write',data:slice.map(function(d){return d.cacheCreate||0;}),borderColor:'#9B5DE5',backgroundColor:'rgba(155,93,229,0.08)',tension:0.35,fill:true,pointRadius:2,pointHoverRadius:4},{label:'Cache Read',data:slice.map(function(d){return d.cacheRead||0;}),borderColor:'#F59E0B',backgroundColor:'rgba(245,158,11,0.08)',tension:0.35,fill:true,pointRadius:2,pointHoverRadius:4}]};
+  var cacheChartData={labels:slice.map(function(d){return d.label;}),datasets:[{label:'Cache Write',data:slice.map(function(d){return d.cacheCreate||0;}),borderColor:'#199E70',backgroundColor:'rgba(25,158,112,0.08)',tension:0.35,fill:true,pointRadius:2,pointHoverRadius:4},{label:'Cache Read',data:slice.map(function(d){return d.cacheRead||0;}),borderColor:'#9085E9',backgroundColor:'rgba(144,133,233,0.08)',tension:0.35,fill:true,pointRadius:2,pointHoverRadius:4}]};
   if(cCacheChart){ cCacheChart.data=cacheChartData; cCacheChart.update(); }
   else { cCacheChart=new Chart(document.getElementById('cCache'),{type:'line',data:cacheChartData,options:{responsive:true,interaction:{mode:'index',intersect:false},plugins:{legend:{position:'top',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:function(ctx){return' '+ctx.dataset.label+': '+fN(ctx.raw);}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.05)'}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{callback:function(v){return fN(v);}}}}}}); }
 
@@ -3497,7 +4786,7 @@ function applyPeriod(nStr){
 
   var dist=D.dist30.filter(function(m){return m.count>0;});
   new Chart(document.getElementById('cModel'),{type:'doughnut',data:{labels:dist.map(function(m){return m.name;}),datasets:[{data:dist.map(function(m){return m.count;}),backgroundColor:dist.map(function(m){return C[m.name]||C.Other;}),borderWidth:2,borderColor:'#0f172a'}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:function(ctx){var m=dist[ctx.dataIndex];return' '+m.name+': '+m.count+' calls ('+m.pct+'%)';}}}}}});
-  new Chart(document.getElementById('cDist'),{type:'bar',data:{labels:D.hist.map(function(h){return h.label;}),datasets:[{data:D.hist.map(function(h){return h.count;}),backgroundColor:'#4A90D9',borderRadius:3}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' '+ctx.raw+' requests';}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.05)'}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'}}}}});
+  new Chart(document.getElementById('cDist'),{type:'bar',data:{labels:D.hist.map(function(h){return h.label;}),datasets:[{data:D.hist.map(function(h){return h.count;}),backgroundColor:'#3987E5',borderRadius:3}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' '+ctx.raw+' requests';}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.05)'}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'}}}}});
   var tbody=document.getElementById('tSess');
   D.sessions.forEach(function(s){var tr=document.createElement('tr');var col=C[s.primary]||C.Other;tr.innerHTML='<td style="font-family:monospace;color:#64748b">'+s.id+'…</td><td>'+s.start+'</td><td style="color:#f1f5f9;font-weight:600">'+fN(s.tokens)+'</td><td>'+s.reqs+'</td><td><span class="badge" style="background:'+col+'22;color:'+col+'">'+s.primary+'</span></td>';tbody.appendChild(tr);});
 }());
@@ -3510,17 +4799,17 @@ function applyPeriod(nStr){
   var estHtml = '';
   if (RL.sessionEst && RL.sessionEst.n > 0) {
     var se = RL.sessionEst;
-    estHtml += '<strong>Session limit estimate: ~' + fN(se.min) + ' – ' + fN(se.max) + ' tokens / 5h</strong>'
+    estHtml += '<strong>5h limit estimate: ~' + fN(se.min) + ' – ' + fN(se.max) + ' tokens / 5h</strong>'
       + ' &nbsp;·&nbsp; median ' + fN(se.median) + ' &nbsp;·&nbsp; ' + se.n + ' observed hits (last 30 days)';
   } else {
-    estHtml += '<strong>Session limit estimate:</strong> not enough data yet (need observed hits with > 50 K tokens in 5h window)';
+    estHtml += '<strong>5h limit estimate:</strong> not enough data yet (need observed hits with > 50 K tokens in 5h window)';
   }
   if (RL.weeklyEst) {
     estHtml += '<br><strong>Weekly limit estimate: ≥ ' + fN(RL.weeklyEst) + ' tokens / week</strong>'
       + ' (conservative lower bound from ' + RL.weeklyHits + ' weekly-limit event' + (RL.weeklyHits !== 1 ? 's' : '') + ')';
   }
   estHtml += '<br><span style="color:#64748b;font-size:11px">'
-    + RL.totalSession + ' session-limit hit' + (RL.totalSession !== 1 ? 's' : '')
+    + RL.totalSession + ' 5h-limit hit' + (RL.totalSession !== 1 ? 's' : '')
     + ' &nbsp;·&nbsp; ' + RL.totalWeekly + ' weekly-limit hit' + (RL.totalWeekly !== 1 ? 's' : '')
     + ' in last 30 days. Anthropic does not publish these limits — all values are empirical.'
     + ' Counted from Claude Code activity only (terminal, Obsidian, editors, desktop agent mode);'
@@ -3533,7 +4822,7 @@ function applyPeriod(nStr){
     var dt  = new Date(ev.timestamp);
     var dStr = dt.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit' });
     var tStr = dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    var col  = ev.type === 'weekly' ? '#F59E0B' : '#9B5DE5';
+    var col  = ev.type === 'weekly' ? '#D03B3B' : '#FAB219';
     var tok = ev.type === 'weekly'
       ? (ev.tokWeek > 0 ? fN(ev.tokWeek) + '<br><span style="font-size:10px;color:#64748b">billing week</span>' : '—')
       : (ev.tok5h  > 0 ? fN(ev.tok5h)   + '<br><span style="font-size:10px;color:#64748b">5h window</span>'   : '—');
@@ -3551,7 +4840,7 @@ function applyPeriod(nStr){
         datasets: [{
           label: 'Tokens (inp+out)',
           data: RL.weeks.map(function(w) { return w.tokens; }),
-          backgroundColor: RL.weeks.map(function(w) { return w.hitWeekly ? '#F59E0B' : '#4A90D9'; }),
+          backgroundColor: RL.weeks.map(function(w) { return w.hitWeekly ? '#D03B3B' : '#3987E5'; }),
           borderRadius: 3,
         }]
       },
@@ -3653,6 +4942,161 @@ function toggleProjectSort(key){
 
 function setProjSubDetail(on){ projSubDetail = on; projCollapsed = {}; renderProjects(); }
 function toggleProjVault(label){ projCollapsed[label] = !projCollapsed[label]; renderProjects(); }
+
+// ── CSV export (v2.0) ───────────────────────────────────────────
+// Runs entirely in the browser. The dashboard is a static file with no channel back into
+// Obsidian (see _generateDashboard()), but every number it draws is already embedded in D —
+// so each CSV is built in memory from the very same arrays the tables render from and handed
+// to the browser as a download. No write access, no network, no dependency.
+// One file per table rather than a single zip (Björn, 30.09.2026): zipping in the browser
+// would have meant bundling a library, i.e. the plugin's first real dependency and a new
+// check at every community review. A button per table also matches what you are looking at.
+// Values are written raw, NOT through fN() — a CSV is for calculating with, so 1560000 goes
+// in, not "1.56 M". Dates go in as ISO so they sort correctly in every tool.
+function csvCell(v){
+  if (v === null || v === undefined) return '';
+  var s = String(v);
+  // RFC 4180: quote if the value holds a delimiter, quote or line break; escape quotes by doubling.
+  return /[",\\n\\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function csvFrom(rows){
+  return rows.map(function(r){ return r.map(csvCell).join(','); }).join('\\r\\n');
+}
+function csvIso(ts){
+  var d = new Date(ts);
+  function p(x){ return (x < 10 ? '0' : '') + x; }
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
+}
+function downloadCsv(name, rows){
+  // BOM first, so Excel reads it as UTF-8 — vault and sub-folder names routinely carry umlauts
+  // and accents, which turn into mojibake without it. Built via fromCharCode rather than an
+  // escape so it survives the template-string layer this dashboard code lives in.
+  var blob = new Blob([String.fromCharCode(0xFEFF) + csvFrom(rows)], { type: 'text/csv;charset=utf-8' });
+  var url  = URL.createObjectURL(blob);
+  var a    = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 0);
+}
+function csvName(part){ return 'token-usage-' + part + '-' + csvIso(Date.now()) + '.csv'; }
+
+// Header CSV menu (Björn, 30.09.2026) — replaced three small per-table buttons, which sat next
+// to the numbers and were easy to miss entirely. One visible entry point next to the tabs
+// instead, offering each report individually plus all three at once.
+function wireCsvMenu(){
+  var menu = document.getElementById('csvMenu');
+  var trig = document.getElementById('csvTrigger');
+  if (!menu || !trig) return;
+  var actions = { projects: exportProjectsCsv, daily: exportDailyCsv, kpis: exportKpisCsv, all: exportAllCsv };
+  trig.onclick = function(e){ e.stopPropagation(); menu.classList.toggle('open'); };
+  Array.prototype.forEach.call(menu.querySelectorAll('[data-csv]'), function(b){
+    b.onclick = function(e){
+      e.stopPropagation();
+      menu.classList.remove('open');
+      var fn = actions[b.getAttribute('data-csv')];
+      if (fn) fn();
+    };
+  });
+  // Click anywhere else closes it — the usual dropdown contract.
+  document.addEventListener('click', function(){ menu.classList.remove('open'); });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') menu.classList.remove('open'); });
+}
+
+// Filled by applyPeriod() on every period change, read by exportKpisCsv().
+var lastKpis = null;
+
+// Dashboard key figures: a flat Metric/Value/Unit list rather than a rebuilt card layout —
+// a CSV of nine headline numbers is something you paste into a tracking sheet, so one metric
+// per row beats trying to mirror the visual grid. Week and limit figures come straight from D
+// (they do not depend on the period dropdown); the rest comes from the lastKpis snapshot.
+function exportKpisCsv(){
+  var k = lastKpis || {};
+  var ws = D.weekStatus || {};
+  var fs = D.focusScore || {};
+  var rl = D.rateLimit || {};
+  var rows = [['Metric','Value','Unit','Scope']];
+  function add(m, v, u, s){ rows.push([m, (v === null || v === undefined) ? '' : v, u || '', s || '']); }
+  var per = k.periodDays ? k.periodDays + ' days' : '';
+  add('Total tokens',            k.totalTokens,     'tokens',        per);
+  add('API calls',               k.apiCalls,        'calls',         per);
+  add('Active days',             k.activeDays,      'days',          per);
+  add('Period length',           k.periodDays,      'days',          per);
+  add('Avg tokens per active day', k.avgPerActiveDay, 'tokens',      per);
+  add('Cache efficiency',        k.cacheRatio,      'ratio (x)',     per);
+  add('Cache efficiency label',  k.cacheLabel,      '',              per);
+  add('Cache write',             k.cacheCreate,     'tokens',        per);
+  add('Cache read',              k.cacheRead,       'tokens',        per);
+  add('Focus score',             fs.score,          'of 100',        per);
+  add('Focus score label',       fs.badge,          '',              per);
+  add('Week so far',             ws.soFar,          'tokens',        'current billing week');
+  add('Week forecast',           ws.forecast,       'tokens',        'current billing week');
+  add('Week share of est. limit', ws.pct,           '%',             'current billing week');
+  // sessionEst is an OBJECT ({n, min, max, median}), unlike weeklyEst which is a plain number.
+  // Exported raw it landed in the CSV as "[object Object]" (found 02.10.2026). The median is the
+  // figure the gauges and the heatmap bands actually use, so that is what belongs here; min, max
+  // and the hit count go in their own rows rather than being squeezed into one cell.
+  add('Estimated 5h limit',      rl.sessionEst ? rl.sessionEst.median : null, 'tokens', 'median of observed hits');
+  add('5h limit range low',      rl.sessionEst ? rl.sessionEst.min : null,  'tokens', 'lowest observed hit');
+  add('5h limit range high',     rl.sessionEst ? rl.sessionEst.max : null,  'tokens', 'highest observed hit');
+  add('5h limit usual band low',  rl.sessionEst ? rl.sessionEst.bandLow : null,  'tokens', '25th percentile of observed hits');
+  add('5h limit usual band high', rl.sessionEst ? rl.sessionEst.bandHigh : null, 'tokens', '75th percentile of observed hits');
+  add('Estimated weekly limit',  rl.weeklyEst,      'tokens',        'empirical estimate');
+  add('5h limit hits observed', rl.totalSession, 'hits',        'all recorded data');
+  add('Weekly limit hits observed',  rl.totalWeekly,  'hits',        'all recorded data');
+  add('Exported at',             new Date().toISOString(), 'ISO 8601', '');
+  downloadCsv(csvName('key-figures'), rows);
+}
+
+// Projects: always the FULL data (D.projects), never the display-folded "Other" row, and
+// always including sub-folders regardless of the detail checkbox — the checkbox controls
+// readability on screen, it should not silently shrink an export. A Level column marks each
+// row as vault or sub so the two never get confused once the file is open elsewhere.
+function exportProjectsCsv(){
+  var rows = [['Level','Vault / root','Sub-project','Tokens','% of parent','Active days','First active','Last active']];
+  (D.projects || []).forEach(function(p){
+    rows.push(['vault', p.label, '', p.tokens || 0, p.pct || 0, p.activeDays || 0, csvIso(p.firstTs), csvIso(p.lastTs)]);
+    (p.projects || []).forEach(function(s){
+      rows.push(['sub', p.label, s.label, s.tokens || 0, s.pct || 0, '', '', '']);
+    });
+  });
+  downloadCsv(csvName('projects'), rows);
+}
+
+// Which vault columns exist in a given slice. Shared by the Daily Detail table and its CSV
+// export so the two can never end up with a different set of columns.
+function dailyLabelsFor(slice){
+  var labels = [];
+  slice.forEach(function(d){ Object.keys(d.byRoot||{}).forEach(function(l){ if(labels.indexOf(l)===-1) labels.push(l); }); });
+  return labels.sort();
+}
+
+// Daily Detail: the day x vault matrix for the period currently selected in the dropdown, so
+// the file always matches what the Projects tab shows. One column per vault, plus the row
+// total. Re-derives its own slice from D.allDays rather than relying on renderProjects()
+// having run — the export now lives in the header and must work on any tab.
+function exportDailyCsv(){
+  var n = parseInt(document.getElementById('periodSel').value, 10);
+  var slice = D.allDays.slice(-n);
+  var labels = dailyLabelsFor(slice);
+  var rows = [['Date'].concat(labels).concat(['Total'])];
+  slice.slice().sort(function(a, b){ return a.ts - b.ts; }).forEach(function(d){
+    var cells = labels.map(function(l){ var r = (d.byRoot||{})[l]; return r ? r.total : 0; });
+    rows.push([csvIso(d.ts)].concat(cells).concat([d.total || 0]));
+  });
+  downloadCsv(csvName('daily-' + n + 'd'), rows);
+}
+
+// "All three files" — browsers throttle or prompt on rapid multi-file downloads, so the three
+// are staggered rather than fired in one burst. Chrome may still ask once whether this site
+// may download multiple files; that is expected and only appears the first time.
+function exportAllCsv(){
+  exportProjectsCsv();
+  setTimeout(exportDailyCsv, 350);
+  setTimeout(exportKpisCsv, 700);
+}
 
 function projectsOverviewTable(){
   var all = (D.projects || []).slice();
@@ -3788,9 +5232,7 @@ function renderProjects(n){
   // (day.byRoot[label].projects) is intentionally not rendered here, only in the
   // Vault_Token_Usage_Projects.md export, since cwd drift within a session (a Bash tool call
   // temporarily cd'ing into a subfolder) is not a reliable "effort per topic" signal.
-  var labels = [];
-  slice.forEach(function(d){ Object.keys(d.byRoot||{}).forEach(function(l){ if(labels.indexOf(l)===-1) labels.push(l); }); });
-  labels.sort();
+  var labels = dailyLabelsFor(slice);
   if (labels.length) {
     html += '<div class="cb report-section"><h2>Daily Detail ('+n+' days)</h2><div style="color:#94a3b8;font-size:11px;margin-bottom:8px">Vault level — see the Vault_Token_Usage_Projects.md export for the sub-project breakdown.</div>' + dailyDetailTable(slice, labels) + '</div>';
   }
@@ -3813,6 +5255,7 @@ renderWeekBar();
 document.getElementById('periodSel').value=String(D.defaultPeriod);
 applyPeriod(D.defaultPeriod);
 renderReports();
+wireCsvMenu();
 <\/script>
 </body>
 </html>`;
@@ -3854,6 +5297,7 @@ function buildSettingsUI(containerEl, app, plugin, refreshUI) {
       .addOption('de', 'Deutsch')
       .addOption('fr', 'Français')
       .addOption('it', 'Italiano')
+      .addOption('es', 'Español')
       .setValue(plugin.settings.language || 'en')
       .onChange(async v => {
         plugin.settings.language = v;
@@ -3865,39 +5309,78 @@ function buildSettingsUI(containerEl, app, plugin, refreshUI) {
         });
         refreshUI(); // refresh settings labels too
       }));
-  new obsidian.Setting(containerEl)
-    .setName(t('settingSidebarMode'))
-    .setDesc(t('settingSidebarModeDesc'))
-    .addDropdown(dd => dd
-      .addOption('classic', 'Classic')
-      .addOption('nextgen', 'NextGen')
-      .setValue(plugin.settings.sidebarMode || 'classic')
-      .onChange(async v => {
-        plugin.settings.sidebarMode = v;
-        await plugin.saveSettings();
-        // Display only — no data changed, so render() (not refresh()) is enough, same
-        // pattern as the language switch above.
-        app.workspace.getLeavesOfType(VIEW_TYPE).forEach(l => {
-          if (l.view instanceof AnthropicUsageView) l.view.render();
-        });
-      }));
-  new obsidian.Setting(containerEl)
-    .setName(t('settingCalendar'))
-    .setDesc(t('settingCalendarDesc'))
-    .addToggle(tg => tg.setValue(plugin.settings.calendarVisible !== false)
-      .onChange(async v => {
-        plugin.settings.calendarVisible = v;
-        await plugin.saveSettings();
-        // Display only — render() (not refresh()), same pattern as the two dropdowns above.
-        app.workspace.getLeavesOfType(VIEW_TYPE).forEach(l => {
-          if (l.view instanceof AnthropicUsageView) l.view.render();
-        });
-      }));
-  new obsidian.Setting(containerEl)
-    .setName(t('settingRefresh'))
-    .setDesc(t('settingRefreshDesc'))
-    .addText(txt => txt.setPlaceholder('30').setValue(String(plugin.settings.refreshSeconds))
-      .onChange(async v => { const n = parseInt(v); if (!isNaN(n) && n >= 5) { plugin.settings.refreshSeconds = n; await plugin.saveSettings(); } }));
+  // ── Weekly reset calibration (v2.0) ───────────────────────────────────────────
+  // A one-off setup step: run /usage in Claude Code, read your own weekly reset, enter it here.
+  // Everything week-shaped in the plugin hangs off this moment — the billing-week bar, the
+  // forecast, the "resets in" countdown and the weekly-limit estimate. Before 2.0 it was
+  // hard-wired to one account's schedule, so for everyone else those numbers quietly described
+  // somebody else's week.
+  const calDone   = plugin.settings.weeklyResetSetAt != null;
+  const calAuto   = plugin.settings.weeklyResetSource === 'auto';
+  const dFmt      = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  const calSetting = new obsidian.Setting(containerEl)
+    .setName(t('settingReset'))
+    .setDesc(!calDone
+      ? t('settingResetDesc')
+      : calAuto
+        ? t('settingResetAuto', new Date(plugin.settings.weeklyResetFrom || plugin.settings.weeklyResetSetAt).toLocaleDateString(localeFor(_lang), dFmt))
+        : t('settingResetDone', new Date(plugin.settings.weeklyResetSetAt).toLocaleDateString(localeFor(_lang), dFmt)));
+
+  // Visual state, not just wording: a calibrated setting gets a green check and a muted,
+  // confirming description; an uncalibrated one gets an amber dot. The point is that a user
+  // can tell at a glance whether this step is still outstanding, without reading the text.
+  calSetting.nameEl.createSpan({
+    cls: calDone ? 'au-cal-ok' : 'au-cal-todo',
+    text: calDone ? ' ✓' : ' ●',
+  });
+  if (calDone) calSetting.descEl.addClass('au-cal-done-desc');
+
+  const DAY_KEYS = ['calSun','calMon','calTue','calWed','calThu','calFri','calSat'];
+  calSetting.addDropdown(dd => {
+    DAY_KEYS.forEach((k, i) => dd.addOption(String(i), t(k)));
+    dd.setValue(String(plugin.settings.weeklyResetDay ?? 0));
+    dd.onChange(async v => {
+      plugin.settings.weeklyResetDay   = parseInt(v, 10);
+      plugin.settings.weeklyResetHour  = plugin.settings.weeklyResetHour ?? 18;
+      plugin.settings.weeklyResetSetAt  = new Date().toISOString();
+      // Manual beats auto from here on: a hand-set reset is a deliberate statement.
+      plugin.settings.weeklyResetSource = 'manual';
+      setBillingWeekReset(plugin.settings.weeklyResetDay, plugin.settings.weeklyResetHour);
+      await plugin.saveSettings();
+      // refresh() not render(): the reset moment changes which entries fall into the current
+      // week, so the figures themselves have to be recomputed, not just redrawn.
+      app.workspace.getLeavesOfType(VIEW_TYPE).forEach(l => {
+        if (l.view instanceof AnthropicUsageView) l.view.refresh();
+      });
+      refreshUI();
+    });
+  });
+  calSetting.addDropdown(dd => {
+    for (let h = 0; h < 24; h++) dd.addOption(String(h), String(h).padStart(2, '0') + ':00');
+    dd.setValue(String(plugin.settings.weeklyResetHour ?? 18));
+    dd.onChange(async v => {
+      plugin.settings.weeklyResetHour  = parseInt(v, 10);
+      plugin.settings.weeklyResetDay   = plugin.settings.weeklyResetDay ?? 0;
+      plugin.settings.weeklyResetSetAt  = new Date().toISOString();
+      // Manual beats auto from here on: a hand-set reset is a deliberate statement.
+      plugin.settings.weeklyResetSource = 'manual';
+      setBillingWeekReset(plugin.settings.weeklyResetDay, plugin.settings.weeklyResetHour);
+      await plugin.saveSettings();
+      app.workspace.getLeavesOfType(VIEW_TYPE).forEach(l => {
+        if (l.view instanceof AnthropicUsageView) l.view.refresh();
+      });
+      refreshUI();
+    });
+  });
+
+  // Two settings removed in v2.0, both for the same reason — they had nothing left to control:
+  //   "Sidebar appearance": Classic is gone, there is only one sidebar.
+  //   "Activity calendar":  the calendar has its own rail page now. Hiding it meant hiding an
+  //                         entire navigation entry, and not clicking the icon does the same
+  //                         job without a switch (Björn, 01.10.2026).
+  // Order (Björn, 02.10.2026): language, weekly reset, report period, archive, retention,
+  // refresh interval — roughly most-decided-once to least-touched, with auto-refresh last
+  // because it is the one nobody needs to change. Paths follow in their own block.
   new obsidian.Setting(containerEl)
     .setName(t('settingReportPeriod'))
     .setDesc(t('settingReportPeriodDesc'))
@@ -3936,6 +5419,11 @@ function buildSettingsUI(containerEl, app, plugin, refreshUI) {
           }
         }, 800);
       }));
+  new obsidian.Setting(containerEl)
+    .setName(t('settingRefresh'))
+    .setDesc(t('settingRefreshDesc'))
+    .addText(txt => txt.setPlaceholder('30').setValue(String(plugin.settings.refreshSeconds))
+      .onChange(async v => { const n = parseInt(v); if (!isNaN(n) && n >= 5) { plugin.settings.refreshSeconds = n; await plugin.saveSettings(); } }));
 
   // Paths grouped separately at the bottom (Björn, 25.08.2026) — "where files go" is a
   // different kind of decision than "how the plugin behaves", worth its own visual block.
@@ -3968,6 +5456,13 @@ function buildSettingsUI(containerEl, app, plugin, refreshUI) {
       .onChange(async v => { if (v.trim()) { plugin.settings.archivePath = v.trim(); await plugin.saveSettings(); } }))
     .addExtraButton(btn => btn.setIcon('folder-open').setTooltip(t('settingShowInFolder'))
       .onClick(() => revealInVault(app, plugin.settings.archivePath || 'Token Usage Archive')));
+  new obsidian.Setting(containerEl)
+    .setName(t('settingCsv'))
+    .setDesc(t('settingCsvDesc'))
+    .addText(txt => txt.setPlaceholder('Token Usage Exports').setValue(plugin.settings.csvPath || 'Token Usage Exports')
+      .onChange(async v => { if (v.trim()) { plugin.settings.csvPath = v.trim(); await plugin.saveSettings(); } }))
+    .addExtraButton(btn => btn.setIcon('folder-open').setTooltip(t('settingShowInFolder'))
+      .onClick(() => revealInVault(app, plugin.settings.csvPath || 'Token Usage Exports')));
 
   containerEl.createEl('p', { cls: 'au-settings-info', text: t('settingSource', CLAUDE_DIR) });
 }
@@ -3985,6 +5480,27 @@ class AnthropicUsageSettingTab extends obsidian.PluginSettingTab {
 // with each release that has user-facing highlights worth surfacing (skip pure bugfix
 // releases — see AnthropicUsagePlugin._maybeShowWhatsNew()).
 const WHATS_NEW_HIGHLIGHTS = {
+  '2.0.0': [
+    'Your numbers may look different after this update, and that is the point. Three things about Anthropic limits turned out to be wrong in earlier versions, and all three are corrected: there is no daily limit (only a 5-hour window and a weekly cap), the 5-hour window is anchored rather than rolling, and cache tokens do not count toward either limit. Details below',
+
+    'No more daily budget. Earlier versions compared Today against "a fair daily share" of the weekly limit — a number we had invented by dividing the weekly cap by seven. Anthropic has no such limit, so the comparison was measuring a real day against an imaginary budget. Today is now shown against your own 29-day average per active day: it claims no quota, it tells you whether today is busier or quieter than usual',
+
+    'The 5-hour window is anchored, not rolling. It opens with your first message and runs exactly five hours; a new one only starts once that span has fully elapsed, chained in fixed blocks regardless of pauses in between. Previous versions summed "the last five hours from now", which at the moment a window turned over mixed the tail of the old window with the head of the new one — producing a figure that belonged to neither, exactly when you most wanted to see that your budget had reset',
+
+    'Only input and output count toward a limit. Cache reads and writes are real volume and are still shown in full in their own rows, but they do not move you toward the 5-hour or weekly limit. This was measured against observed limit hits rather than assumed: weighting cache tokens by their price ratios — the obvious guess — produced a far noisier figure than plain input + output',
+
+    'Weekly reset detects itself. The weekly limit resets at a weekday and hour that differs per account, and everything week-shaped depends on it. When you hit a weekly limit, Claude writes the next reset time into the message, and the plugin now reads it from there — Settings shows a green check and the date it came from. A manual setting always wins; automatic detection only confirms it, never overwrites it',
+
+    'New look — the colour world has been rebuilt around a rule: one colour answers one question. Token types (input, output, cache write, cache read) say WHAT something is; green, amber and red say HOW IT STANDS, and never both at once. Every value was measured against the real surfaces for contrast and colour-blind separation, not picked by eye. New TU logo, four model colours, and the budget panels now use rings instead of bars',
+
+    'The Classic sidebar has been removed — what you see now IS the plugin. If the sidebar looks different after this update, nothing is broken: the icon rail with Today, Calendar, Analytics and Settings is the one and only layout from here on. The "Sidebar appearance" setting is gone with it, because there is nothing left to switch between',
+
+    'Activity heatmap, rebuilt around your billing week. One row per calendar day, one cell per two hours. It spans eight rows rather than seven, because a week running from reset to reset touches eight calendar dates — the first and last rows are partial on purpose, which is what makes the boundary of your cycle visible. Colour shows pace against your observed 5-hour limit, not raw volume. Beside it, Active days counts the days of this week with any activity',
+
+    'Calendar shows two months instead of one. At the start of a month a single grid shows only a handful of usable days and hides exactly the run-up you are looking for. The arrows move the pair further back, as far as the archive reaches',
+    'CSV export, two ways. The CSV button in the sidebar header writes the files into your vault, into a folder you choose under Settings — the menu names that folder before you click. The dashboard has the same three exports in its header menu, but those are browser downloads and land wherever your browser puts them; a web page cannot choose a folder. Projects Overview, Daily Detail matrix, key figures, or all three at once. Raw numbers and ISO dates, ready to calculate with. Everything is generated locally — no upload, no network, same as the rest of the plugin',
+    'Spanish — the plugin UI and the full glossary are now available in Español alongside English, German, French and Italian. Switch under Settings → Language',
+  ],
   '1.9.0': [
     'Dashboard: Limit Hero banner — the empirical session, daily-pacing, and weekly limit estimates now get a prominent banner at the very top of the dashboard, above the KPI cards',
     'Sidebar: Limit Pulse (NextGen) — the same Today/This Week limit percentages now sit at the very top of the Today page too, visible the moment you open the sidebar',
@@ -4086,6 +5602,23 @@ class AnthropicUsagePlugin extends obsidian.Plugin {
       id: 'generate-vault-project-report', name: 'Create Vault Token Usage Projects report',
       callback: () => { const l = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0]; if (l?.view instanceof AnthropicUsageView) l.view._generateVaultProjectReport(); }
     });
+    // CSV export from the plugin side, into the configurable vault folder (02.10.2026).
+    // One command per file plus one for all three, mirroring the Dashboard's export menu.
+    for (const [id, label, kind] of [
+      ['export-csv-all',      'Export all CSV files',          'all'],
+      ['export-csv-projects', 'Export projects CSV',           'projects'],
+      ['export-csv-daily',    'Export daily detail CSV',       'daily'],
+      ['export-csv-kpis',     'Export key figures CSV',        'kpis'],
+    ]) {
+      this.addCommand({
+        id, name: label,
+        callback: () => {
+          const l = this.app.workspace.getLeavesOfType(VIEW_TYPE)[0];
+          if (l?.view instanceof AnthropicUsageView) l.view._exportCsv(kind);
+          else new obsidian.Notice(t('csvNoData'));
+        }
+      });
+    }
     this.addCommand({
       id: 'show-whats-new', name: "Show what's new",
       callback: () => {
@@ -4123,8 +5656,17 @@ class AnthropicUsagePlugin extends obsidian.Plugin {
     if (!leaf) { leaf = workspace.getRightLeaf(false); await leaf.setViewState({ type: VIEW_TYPE, active: true }); }
     workspace.revealLeaf(leaf);
   }
-  async loadSettings(raw)  { this.settings = Object.assign({}, DEFAULT_SETTINGS, raw); _lang = this.settings.language || 'en'; }
-  async saveSettings()  { await this.saveData(this.settings); _lang = this.settings.language || 'en'; }
+  // _applyReset must run in BOTH of these, not just on load: billingWeekStart() reads module
+  // -level values, so without it a freshly calibrated reset would not take effect until the
+  // next Obsidian restart — the user would change the setting and see nothing happen.
+  _applyReset() {
+    setBillingWeekReset(
+      this.settings.weeklyResetDay  ?? 0,
+      this.settings.weeklyResetHour ?? 18,
+    );
+  }
+  async loadSettings(raw)  { this.settings = Object.assign({}, DEFAULT_SETTINGS, raw); _lang = this.settings.language || 'en'; this._applyReset(); }
+  async saveSettings()  { await this.saveData(this.settings); _lang = this.settings.language || 'en'; this._applyReset(); }
 }
 
 module.exports = AnthropicUsagePlugin;

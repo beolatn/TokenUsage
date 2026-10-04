@@ -5,41 +5,97 @@
    - Datenfarben (Balken, Werte): fest — in beiden Themes lesbar, visuell konsistent
 */
 
+/*
+   Zwei getrennte Farbrollen (v2.0) — die zentrale Regel der neuen Farbwelt:
+
+   Rolle 1, Token-Typen: WAS etwas ist (Input, Output, Cache Write, Cache Read).
+   Rolle 2, Status:      WIE GUT es steht (gut, Warnung, kritisch).
+
+   Bis v1.9 teilten sich beide dieselben vier Variablen: --au-green war gleichzeitig
+   "Output" und "alles im grünen Bereich", --au-amber gleichzeitig "Cache Read" und
+   "Warnung". Eine Farbe kann aber nur eine der beiden Fragen beantworten. Seit 2.0
+   hat jede Rolle ihre eigenen Variablen, und die Token-Palette enthält bewusst kein
+   Grün und kein Rot mehr, damit sie mit der Ampel nicht kollidieren kann.
+
+   Alle Werte sind gegen die echten Flächen geprüft (Helligkeitsband, Sättigung,
+   Farbfehlsichtigkeit, Kontrast), nicht nach Augenmaß gewählt. Begründung und
+   Prüfprotokoll: Design/Farbentwurf-2.0.md
+*/
 :root {
-  --au-blue:      #4A90D9;
-  --au-green:     #52B788;
-  --au-amber:     #F59E0B;
-  --au-purple:    #9B5DE5;
-  --au-red:       #EF4444;
+  /* ── Rolle 1: Token-Typen ──────────────────────────────────────
+     Die Slot-Namen (blue/green/amber/purple) stammen aus v1.x und werden vom
+     JS-Code als Slot-Bezeichner übergeben (_statRow(..., 'green')). Ab 2.0
+     benennen sie den SLOT, nicht mehr den Farbton — der Kommentar dahinter sagt,
+     welcher Token-Typ jeweils gemeint ist. Umbenennen der Slots ist ein eigener
+     Aufräumschritt, siehe Projektdatei. */
+  --au-blue:      #3987E5;   /* Input       */
+  --au-green:     #D95926;   /* Output      — Orange, nicht mehr Grün */
+  --au-purple:    #199E70;   /* Cache Write — Aqua,   nicht mehr Lila */
+  --au-amber:     #9085E9;   /* Cache Read  — Violett, nicht mehr Gelb */
+
+  --au-blue-bg:   rgba( 57, 135, 229, 0.10);
+  --au-green-bg:  rgba(217,  89,  38, 0.10);
+  --au-purple-bg: rgba( 25, 158, 112, 0.10);
+  --au-amber-bg:  rgba(144, 133, 233, 0.10);
+
+  /* ── Rolle 2: Status / Ampel ───────────────────────────────────
+     Ausschließlich für Bewertung. Erscheinen nie als Balkenfüllung eines
+     Token-Typs, sondern nur als Punkt, Pfeil, Rahmen oder Zelle — und immer
+     zusammen mit einer Form oder einem Wort, nie als Farbe allein. */
+  --au-good:      #0CA30C;
+  --au-warn:      #FAB219;
+  --au-crit:      #D03B3B;
+  --au-good-bg:   rgba( 12, 163,  12, 0.12);
+  --au-warn-bg:   rgba(250, 178,  25, 0.12);
+  --au-crit-bg:   rgba(208,  59,  59, 0.12);
+  /* Zwischenstufe nur für die Tages-Heatmap (01.10.2026). Die Ampel hat drei Stufen und
+     bleibt dabei — eine Rampe grün→gelb→orange→rot wird aber nicht wie eine Ampel gelesen,
+     sondern als Reihenfolge, und dafür darf der Abstand zum Nachbarn kleiner sein. Nur
+     hier verwenden, nie als vierte Bewertungsstufe irgendwo sonst. */
+  --au-hot:       #E8701A;
+  /* Nur fuer die Heatmap (Bjoern, 04.10.2026). --au-gray-bg mit 0.10 war so schwach, dass
+     sich "gemessen, keine Aktivitaet" nicht vom Rahmen-Geist der Zellen ausserhalb des
+     Wochenfensters abhob - die oberste Sonntagszeile las sich als ein gleichfoermiger
+     Streifen, obwohl dort die Zyklusgrenze sichtbar werden soll. Eigener Wert statt
+     Aenderung an --au-gray-bg, das auch Chips und den Active-Days-Punkt speist. */
+  --au-heat-empty: rgba(107, 114, 128, 0.18);
+
+  /* ── Neutral ───────────────────────────────────────────────────*/
+  --au-red:       #D03B3B;   /* Alias auf --au-crit, für Altcode */
+  --au-red-bg:    rgba(208,  59,  59, 0.10);
   --au-gray:      #6B7280;
-  --au-blue-bg:   rgba(74,  144, 217, 0.10);
-  --au-green-bg:  rgba(82,  183, 136, 0.10);
-  --au-amber-bg:  rgba(245, 158,  11, 0.10);
-  --au-purple-bg: rgba(155,  93, 229, 0.10);
-  --au-red-bg:    rgba(239,  68,  68, 0.10);
   --au-gray-bg:   rgba(107, 114, 128, 0.10);
 }
 
 /* ── Logo */
 .au-logo {
   display: flex;
+  /* center, because the monogram is deliberately about twice the height of the wordmark
+     (Björn's hierarchy: big TU, small "Token Usage"). With two different sizes they cannot
+     both align top AND bottom, so the smaller one sits centred against the larger. */
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   padding: 2px 8px 2px 5px;
   border-radius: 6px;
+  /* Border picks up the logo's own traffic light: green into yellow into red (v2.0). */
   background:
     linear-gradient(var(--background-primary), var(--background-primary)) padding-box,
-    linear-gradient(120deg, #4A90D9 0%, #9B5DE5 100%) border-box;
+    linear-gradient(120deg, #0CA30C 0%, #FAB219 55%, #D03B3B 100%) border-box;
   border: 1px solid transparent;
 }
+/* Wordmark: secondary to the monogram, hence 10px rather than the old 12.5px. Plain text
+   instead of the old gradient fill — the mark beside it carries the colour now, and
+   gradient-clipped text is the first thing to turn unreadable at small sizes. */
 .au-logo-text {
   font-weight: 700;
-  font-size: 12.5px;
+  font-size: 10px;
   letter-spacing: 0.04em;
-  background: linear-gradient(120deg, #4A90D9 0%, #9B5DE5 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  line-height: 1.15;
+  color: var(--text-normal);
+}
+/* "Usage" in the brand yellow, mirroring the logo lockup. */
+.au-logo-accent {
+  color: var(--au-warn);
 }
 
 /* ── Container */
@@ -86,6 +142,7 @@
 }
 .au-refresh-btn,
 .au-report-btn,
+.au-csv-btn,
 .au-dash-btn {
   background: none;
   border: 1px solid var(--background-modifier-border);
@@ -100,14 +157,23 @@
   font-size: 13px;
 }
 .au-report-btn,
+.au-csv-btn,
 .au-dash-btn {
   padding: 0px 7px 1px;
   font-size: 10.5px;
   font-weight: 500;
 }
-.au-refresh-btn:hover  { color: var(--au-purple); border-color: var(--au-purple); }
-.au-report-btn:hover   { color: var(--au-blue); border-color: var(--au-blue); background: var(--au-blue-bg); }
-.au-dash-btn:hover     { color: var(--au-amber); border-color: var(--au-amber); background: var(--au-amber-bg); }
+/* One accent for all three (v2.0, Björn 30.09.2026 — "farblich ans Design angepasst").
+   They used to hover in three different token-type colours, which said "these are three
+   kinds of data" when they are in fact three actions. Data colours belong to data. */
+.au-refresh-btn:hover,
+.au-report-btn:hover,
+.au-csv-btn:hover,
+.au-dash-btn:hover {
+  color: var(--au-good);
+  border-color: var(--au-good);
+  background: var(--au-good-bg);
+}
 
 /* Help button — round pill */
 .au-help-btn {
@@ -133,28 +199,6 @@
   background: var(--au-blue-bg);
 }
 
-/* Settings button — round pill, same weight as help button */
-.au-settings-btn {
-  background: none;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 18px;
-  text-align: center;
-  flex-shrink: 0;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-.au-settings-btn:hover {
-  color: var(--au-green);
-  border-color: var(--au-green);
-  background: var(--au-green-bg);
-}
-
 /* ── Meta-Zeile (Live + Plan-Badge) */
 .au-meta {
   display: flex;
@@ -166,7 +210,7 @@
   border-bottom: 1px solid var(--au-purple);
 }
 .au-live {
-  color: var(--au-green);
+  color: var(--au-good);
   font-variant-numeric: tabular-nums;
 }
 .au-plan-badge {
@@ -204,8 +248,8 @@
 .au-spike-badge {
   font-size: 8px;
   font-weight: 700;
-  background: var(--au-amber-bg);
-  color: var(--au-amber);
+  background: var(--au-warn-bg);
+  color: var(--au-warn);
   border-radius: 3px;
   padding: 1px 4px;
   margin-left: 2px;
@@ -230,9 +274,9 @@
   margin-left: 4px;
   letter-spacing: 0.02em;
 }
-.au-verdict-good    { background: var(--au-green-bg);  color: var(--au-green); }
-.au-verdict-warn    { background: var(--au-amber-bg);  color: var(--au-amber); }
-.au-verdict-bad     { background: var(--au-red-bg);    color: var(--au-red); }
+.au-verdict-good    { background: var(--au-good-bg);   color: var(--au-good); }
+.au-verdict-warn    { background: var(--au-warn-bg);   color: var(--au-warn); }
+.au-verdict-bad     { background: var(--au-crit-bg);   color: var(--au-crit); }
 .au-verdict-neutral { background: var(--background-modifier-border); color: var(--text-faint); }
 .au-section-title {
   text-transform: uppercase;
@@ -253,114 +297,233 @@
   font-weight: 500;
 }
 
-/* ── Balkenchart 7 Tage */
-.au-chart-section { padding-bottom: 4px; }
+/* ── Activity Heatmap, 30 Tage (Björn 01.10.2026, nach Mockup)
+      Wochentag-Zeilen × Kalenderwochen-Spalten, Legende rechts daneben.
+      Loest die alte 7-Tage-×-4h-Block-Heatmap ab. */
+.au-dheat { padding-bottom: 6px; }
 
-.au-chart {
+/* Klickbar: gleiche Geste wie bei den anderen Sektionen (Bjoern, 02.10.2026).
+   user-select verhindert, dass beim Zuklappen die Ueberschrift markiert wird. */
+.au-dheat-hdr {
   display: flex;
-  align-items: flex-end;
-  gap: 3px;
-  height: 42px;
-  margin-bottom: 1px;
-}
-.au-chart-col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  height: 100%;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  user-select: none;
 }
-.au-chart-bar {
-  width: 100%;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
-  align-self: flex-end;
-  transition: filter 0.15s, height 0.4s ease;
-  cursor: default;
+.au-dheat-hdr .au-chevron { flex-shrink: 0; }
+/* Zugeklappt braucht der Kopf keinen Abstand nach unten mehr. */
+.au-dheat:has(.au-dheat-content[style*="none"]) .au-dheat-hdr { margin-bottom: 0; }
+.au-dheat-ico {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--au-good-bg);
+  color: var(--au-good);
 }
-.au-chart-bar:hover { filter: brightness(1.35); }
-.au-bar-today { border-radius: 3px 3px 0 0; }
+.au-dheat-ico .svg-icon { width: 14px; height: 14px; }
+.au-dheat-hdr-txt { min-width: 0; }
+.au-dheat-hdr-txt .au-section-sub { margin-top: 1px; }
 
-.au-chart-lbl {
-  font-size: 8.5px;
-  color: var(--text-faint);
-  margin-top: 2px;
-  text-align: center;
-  line-height: 1;
-}
-.au-chart-pct {
-  font-size: 7.5px;
-  color: var(--text-faint);
-  margin-top: 1px;
-  text-align: center;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  min-height: 9px; /* Platzhalter auch wenn leer, hält Ausrichtung */
-}
-.au-lbl-today { color: var(--au-blue); font-weight: 700; }
-
-/* ── Heatmap 7 Tage × 6 Zeitblöcke (nur NextGen, Nachschärfungsliste Punkt 5, 01.09.2026) */
-.au-heatmap-section { padding-bottom: 4px; }
-
-.au-heatmap-grid {
+.au-dheat-body {
   display: flex;
   align-items: flex-start;
-  gap: 3px;
-  margin-bottom: 1px;
+  gap: 10px;
 }
-.au-heatmap-col {
+/* ── Zeitstrahl der echten 5h-Fenster (Today-Seite, 02.10.2026)
+      Eine Zeile pro Tag = 24 Stunden. Jeder Balken ist ein tatsaechliches Fenster an
+      seiner echten Uhrzeit. Feste Uhrzeit-Bloecke gibt es bewusst nicht, weil Anthropics
+      Fenster an der ersten Nachricht haengen, nicht an der Uhr. */
+/* Muss wachsen, sonst nimmt das Raster nur seine Mindestbreite und rechts neben der
+   Legende bleibt Luft stehen — es sah aus, als fehle dort etwas (Bjoern, 02.10.2026).
+   Mit flex:1 fluchtet die Sektion mit den Tacho-Kacheln darunter. */
+.au-tl {
   flex: 1;
   min-width: 0;
+  margin-bottom: 2px;
+}
+.au-tl-row {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 5px;
+  margin-bottom: 3px;
 }
-.au-heatmap-cells {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-}
-.au-heatmap-cell {
-  width: 100%;
-  height: 6px;
-  border-radius: 2px;
-  cursor: default;
-  transition: filter 0.15s, opacity 0.4s ease;
-}
-.au-heatmap-cell:hover { filter: brightness(1.35); }
-
-.au-heatmap-lbl {
-  font-size: 8.5px;
-  color: var(--text-faint);
-  margin-top: 2px;
-  text-align: center;
+.au-tl-dow {
+  width: 24px;
+  flex-shrink: 0;
+  font-size: 9px;
   line-height: 1;
+  color: var(--text-faint);
+  text-align: right;
 }
+.au-tl-dow.is-today { color: var(--text-normal); font-weight: 700; }
+/* 24h-Abschnitte, die noch nicht begonnen haben: sichtbar, aber erkennbar leer statt
+   so auszusehen wie ein Tag, an dem nichts passiert ist. */
+/* 12 Bubbles je Zeile = 2 Stunden pro Zelle (Mockup-Stil, Bjoern 02.10.2026).
+   Loest die Balkendarstellung ab: ein Fenster, das 16 Minuten vor Tagesende oeffnete,
+   war als Balken fast unsichtbar, obwohl Tokens durchliefen. */
+.au-tl-cells {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+/* Halbe Hoehe statt Quadrat (Bjoern, 02.10.2026): acht Zeilen Quadrate waren zu wuchtig
+   fuer eine Sidebar. 2:1 haelt die Zellen an der Spaltenbreite, egal wie breit die
+   Sidebar gezogen wird. */
+.au-tl-cell {
+  aspect-ratio: 2 / 1;
+  min-height: 6px;
+  border-radius: 3px;
+  background: var(--au-heat-empty);
+  cursor: default;
+  transition: filter 0.15s;
+}
+.au-tl-cell:hover { filter: brightness(1.35); }
+/* Drei Arten von Nichts, bewusst unterschieden:
+   is-outside = ausserhalb des Wochenfensters (erste und letzte Zeile sind Teiltage)
+   is-void    = in der Zukunft, noch nicht erreicht
+   au-dheat-empty = wirklich keine Aktivitaet, das ist die einzige echte Aussage
 
-.au-heatmap-legend {
+   is-void war transparent und damit unsichtbar - das Raster sah lueckenhaft aus
+   (Bjoern, 02.10.2026). Jetzt angelegt, aber gedaempft: der Platz ist da, die Zelle
+   ist erkennbar noch nicht gefuellt. */
+.au-tl-cell.is-void    { background: var(--au-heat-empty); opacity: 0.4; }
+.au-tl-cell.is-outside { background: transparent; opacity: 0.3; box-shadow: inset 0 0 0 1px var(--background-modifier-border); }
+
+
+/* Muss denselben Wert tragen wie .au-tl-cell: das ist die Legendenkachel fuer genau
+   diesen Zellzustand. Laufen die beiden auseinander, beschriftet die Legende eine Farbe,
+   die im Raster nicht vorkommt. */
+.au-dheat-empty    { background: var(--au-heat-empty); }
+.au-dheat-low      { background: var(--au-good); }
+.au-dheat-medium   { background: var(--au-warn); }
+.au-dheat-high     { background: var(--au-hot);  }
+.au-dheat-veryhigh { background: var(--au-crit); }
+
+.au-dheat-legend {
+  flex-shrink: 0;
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px 9px;
-  margin-top: 4px;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 1px;
 }
-.au-heatmap-legend-item {
+.au-dheat-legend-item {
   display: flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
   font-size: 9.5px;
+  line-height: 1;
   color: var(--text-muted);
+  white-space: nowrap;
 }
-.au-heatmap-swatch {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
+.au-dheat-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
   flex-shrink: 0;
 }
-.au-heatmap-swatch-high   { background: var(--au-red); }
-.au-heatmap-swatch-medium { background: var(--au-amber); }
-.au-heatmap-swatch-low    { background: var(--au-green); }
-.au-heatmap-swatch-empty  { background: var(--au-gray); }
+
+/* Legende als Einzeiler UNTER dem Raster statt als Spalte daneben (Bjoern, 02.10.2026).
+   Gewinnt die Breite, die Raster und Active-Days-Panel beide gebraucht haben. */
+.au-dheat-legend-row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+  margin-top: 6px;
+  /* Halbe Zeile Luft zum Erklaertext darunter (Bjoern, 02.10.2026) — Legende und Satz
+     klebten aneinander und lasen sich als ein Block. */
+  margin-bottom: 7px;
+}
+
+/* ── Active Days: rechts neben dem Raster, in derselben Zeile */
+.au-active {
+  flex-shrink: 0;
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  border-left: 1px solid var(--background-modifier-border);
+  padding-left: 9px;
+}
+.au-active-hdr {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.au-active-ico {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--au-warn);
+}
+.au-active-ico .svg-icon { width: 12px; height: 12px; }
+.au-active-title {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  line-height: 1.1;
+}
+.au-active-val {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  margin-bottom: 5px;
+}
+.au-active-num {
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-normal);
+  font-variant-numeric: tabular-nums;
+}
+.au-active-of {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.au-active-dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 5px;
+}
+.au-active-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* Gearbeitet / vorbei aber ruhig / noch nicht erreicht — dieselbe Dreiteilung wie bei den
+   Heatmap-Zellen: nur die mittlere ist eine Aussage darueber, wie die Woche lief. */
+.au-active-dot.is-on     { background: var(--au-good); }
+.au-active-dot.is-off    { background: var(--au-gray-bg); box-shadow: inset 0 0 0 1px var(--background-modifier-border); }
+.au-active-dot.is-future { background: transparent; box-shadow: inset 0 0 0 1px var(--background-modifier-border); opacity: .45; }
+.au-active-sub {
+  font-size: 8.5px;
+  line-height: 1.25;
+  color: var(--text-faint);
+}
+
+/* Kalenderseite: Monatsbeschriftung ueber jedem der beiden Raster (01.10.2026) */
+.au-cal-month-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 10px 0 3px;
+}
 
 /* ── Letzte Aktion */
 .au-last-hdr {
@@ -425,12 +588,17 @@
 .au-text-green  { color: var(--au-green); }
 .au-text-amber  { color: var(--au-amber); }
 .au-text-purple { color: var(--au-purple); }
-
-/* NextGen sidebar (Phase 2) — same row/column structure as .au-stat-row plus one auto-width
-   column for the optional verdict glyph. Kept as a separate class (not a modification of
-   .au-stat-row above) so Classic's row layout is never touched by this rule. */
+/* Today rows: colour chip, label, value, bar, verdict glyph (v2.0, from Bjoerns mockup).
+   The chip repeats the token type colour so a row is identifiable before the label is read —
+   the role the coloured icon tiles play in the mockup, minus the icons, which would need four
+   more glyphs for no added meaning. */
 .au-stat-row-ng {
-  grid-template-columns: 36px 46px 1fr auto;
+  grid-template-columns: 8px 34px 46px 1fr auto;
+}
+.au-stat-chip {
+  width: 8px;
+  height: 8px;
+  border-radius: 2.5px;
 }
 
 /* NextGen sidebar (Phase 2) — 2x2 tile grid for 7 Days / N Days (Björn, 28.08.2026: those two
@@ -582,19 +750,16 @@
   border-bottom: 1px solid var(--background-modifier-border);
 }
 
-/* NextGen activity calendar (v1.8) — the bottom mirror of .au-content-anchor. Negative
-   horizontal margins full-bleed the border/background to the panel edges; the negative
-   bottom margin cancels .au-content's own 8px bottom padding so `bottom: 0` sticks flush
-   with the scroll container's edge (same reasoning as the anchor owning padding-top). */
+/* Activity calendar. Until v1.9 this was pinned to the bottom of every page (position:sticky,
+   bottom:0) as a mirror of .au-content-anchor. In 2.0 it lives on its own Calendar page instead,
+   so the pinning is gone: it was covering the tail of the long Settings page, and a normal
+   block flows correctly under the heatmap it now shares a page with. */
 .au-calendar {
-  position: sticky;
-  bottom: 0;
-  z-index: 5;
   flex-shrink: 0;
   background: var(--background-primary);
   border-top: 1px solid var(--background-modifier-border);
-  margin: 6px -10px -8px;
-  padding: 6px 10px 8px;
+  margin: 8px -10px 0;
+  padding: 8px 10px;
 }
 .au-cal-head {
   display: flex;
@@ -647,22 +812,51 @@
 .au-cal-day.is-outside { color: var(--text-faint); opacity: 0.45; }
 .au-cal-day.is-today   { outline: 1px solid var(--au-blue); color: var(--text-normal); }
 .au-cal-day.is-future  { color: var(--text-faint); opacity: 0.3; }
-/* Limit Pulse (v1.9, NextGen Today page) — Today / This Week vs. the empirical limit estimates.
-   Sits at the very top of the page, deliberately compact: two side-by-side mini-cards, a big
-   number, a thin progress bar, and a percentage line. */
-.au-pulse-row{display:flex;gap:8px;}
-.au-pulse-item{flex:1;min-width:0;background:var(--background-secondary);border-radius:6px;padding:8px 10px;}
-.au-pulse-lbl{font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.04em;}
-.au-pulse-val{font-size:16px;font-weight:700;color:var(--text-normal);font-variant-numeric:tabular-nums;margin:2px 0 5px;}
-.au-pulse-val.au-pulse-val-good{color:var(--au-green);}
-.au-pulse-val.au-pulse-val-warn{color:var(--au-amber);}
+/* Limit Pulse (v1.9, NextGen Today page; 5h-Kachel ergaenzt 01.10.2026) — 5h-Fenster / Heute /
+   Diese Woche gegen die empirischen Schaetzungen. Drei Mini-Karten nebeneinander, grosse Zahl,
+   Ring, Prozentzeile. Schriftgroessen leicht reduziert, weil jede Karte jetzt ein Drittel statt
+   der Haelfte der Breite hat. */
+.au-pulse-row{display:flex;gap:6px;}
+.au-pulse-item{flex:1;min-width:0;background:var(--background-secondary);border-radius:8px;padding:9px 6px 8px;text-align:center;}
+.au-pulse-lbl{font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Ring replaces the old flat bar (v2.0) — same figure, the sidebar twin of the dashboard
+   budget rings. Centred, with the percentage inside and the raw number underneath. */
+.au-pulse-ring{display:flex;justify-content:center;margin:6px 0 4px;}
+.au-pulse-val{font-size:13px;font-weight:700;color:var(--text-normal);font-variant-numeric:tabular-nums;margin:0;}
+.au-pulse-val.au-pulse-val-good{color:var(--au-good);}
+.au-pulse-val.au-pulse-val-warn{color:var(--au-warn);}
 .au-pulse-val.au-pulse-val-bad {color:var(--au-red);}
 .au-pulse-track{height:4px;border-radius:2px;background:var(--background-modifier-border);overflow:hidden;}
 .au-pulse-fill{height:100%;border-radius:2px;}
-.au-pulse-fill.au-pulse-good{background:var(--au-green);}
-.au-pulse-fill.au-pulse-warn{background:var(--au-amber);}
-.au-pulse-fill.au-pulse-bad {background:var(--au-red);}
-.au-pulse-pct{font-size:10px;color:var(--text-muted);margin-top:4px;line-height:1.3;}
+.au-pulse-fill.au-pulse-good{background:var(--au-good);}
+.au-pulse-fill.au-pulse-warn{background:var(--au-warn);}
+.au-pulse-fill.au-pulse-bad {background:var(--au-crit);}
+.au-pulse-pct{font-size:9px;color:var(--text-muted);margin-top:3px;line-height:1.25;}
+/* Nennt die Zahl, gegen die alle drei Ringe und die Heatmap rechnen. Hervorgehoben,
+   weil sie der Nenner jeder Prozentangabe auf dieser Seite ist (Bjoern, 02.10.2026). */
+.au-pulse-basis{
+  margin-top:6px;
+  text-align:center;
+  font-weight:600;
+  color:var(--text-muted);
+}
+/* Standardfarbe statt Rot (Bjoern, 02.10.2026): Rot ist in diesem Plugin die Ampelfarbe
+   fuer "kritisch". Der Median ist aber ein Bezugswert, keine Bewertung - rot haette ihm
+   eine Dringlichkeit gegeben, die er nicht hat. Fett und unterstrichen reichen. */
+.au-pulse-basis-val{
+  color:var(--text-normal);
+  text-decoration:underline;
+  font-weight:700;
+  white-space:nowrap;
+}
+/* Das Band unter dem Median (Bjoern, 04.10.2026): leiser als die Basiszeile, weil es nur
+   sagt, wie stark der Bezugswert streut. Normales Gewicht, zentriert, kein Unterstrich. */
+.au-pulse-band{
+  margin-top:2px;
+  text-align:center;
+  font-weight:400;
+  color:var(--text-muted);
+}
 
 /* Small marker, top-right corner — deliberately distinct from the bottom-center verdict dot so
    the two never visually merge into one ambiguous shape. */
@@ -686,9 +880,9 @@
   height: 5px;
   border-radius: 50%;
 }
-.au-cal-dot-good { background: var(--au-green); }
-.au-cal-dot-warn { background: var(--au-amber); }
-.au-cal-dot-bad  { background: var(--au-red); }
+.au-cal-dot-good { background: var(--au-good); }
+.au-cal-dot-warn { background: var(--au-warn); }
+.au-cal-dot-bad  { background: var(--au-crit); }
 .au-mini-bar-wrap {
   height: 6px;
   background: var(--background-modifier-border);
@@ -823,9 +1017,15 @@
 .au-whats-new-modal h2 {
   margin-top: 0;
 }
+/* Scrollbar statt endlos lang (04.10.2026): Die 2.0.0-Liste hat elf Eintraege, weil sich
+   Verhalten geaendert hat, das Nutzer sonst fuer einen Fehler halten. Ohne Hoehenbegrenzung
+   waechst das Fenster ueber den Bildschirm hinaus und schiebt den "Got it"-Button hinaus —
+   man kann den Hinweis dann nicht mehr wegklicken. */
 .au-whats-new-list {
   margin: 0.5em 0 1em;
   padding-left: 1.2em;
+  max-height: 55vh;
+  overflow-y: auto;
 }
 .au-whats-new-list li {
   margin-bottom: 0.4em;
@@ -943,4 +1143,18 @@
   padding: 20px 10px;
   font-style: italic;
   font-size: 11px;
+}
+
+/* Weekly reset calibration status (v2.0). Visual state next to the setting name, so a user
+   can see at a glance whether this one-off step is still outstanding without reading text. */
+.au-cal-ok {
+  color: var(--au-good);
+  font-weight: 700;
+}
+.au-cal-todo {
+  color: var(--au-warn);
+  font-weight: 700;
+}
+.au-cal-done-desc {
+  opacity: 0.75;
 }
