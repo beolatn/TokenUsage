@@ -170,11 +170,11 @@ const HELP_SECTIONS = [
   },
   {
     title: 'C.Write — Cache Write',
-    body:  'When Claude processes a long context for the first time, it can store ("write") it into a prompt cache. Cache Write costs ~1.25× regular input — a small premium paid upfront to unlock future savings.',
+    body:  'When Claude processes a long context for the first time, it stores ("writes") it into a prompt cache. There are two kinds, priced differently: a 5-minute cache write costs 1.25× the input price, a 1-hour cache write costs 2×. In our own logs about 90% of the cache writes from Claude Code on a subscription were the 1-hour kind, while subagents wrote 5-minute caches. Hover over the C.Write row to see the split for that period. Cache writes also count toward the 5-hour limit (see "What counts toward a limit").',
   },
   {
     title: 'C.Read — Cache Read',
-    body:  'Any follow-up request that reuses the same cached context is served at ~0.10× the input price — roughly 10× cheaper than reprocessing. A high C.Read value means you are working efficiently with the same material.',
+    body:  'Any follow-up request that reuses the same cached context is served at a fraction of the input price: 0.1× on most models, 0.05× on Opus 5.5 and Sonnet 5.5, 0.025× on Fable 5.1 (Anthropic pricing page, October 2026). A high C.Read value means you are working efficiently with the same material.',
   },
   {
     title: 'C.Write vs C.Read — what the ratio tells you',
@@ -307,6 +307,7 @@ const STRINGS = {
     rowInput:         'Input',
     rowOutput:        'Output',
     rowCWrite:        'C.Write',
+    cwSplitTip:       (h1, m5) => `Cache writes: ${h1} for 1 hour (2x input price), ${m5} for 5 minutes (1.25x)`,
     rowCRead:         'C.Read',
     settingLang:      'Language',
     settingLangDesc:  'Display language for the plugin UI. Takes effect immediately.',
@@ -429,6 +430,7 @@ const STRINGS = {
     rowInput:         'Input',
     rowOutput:        'Output',
     rowCWrite:        'C.Write',
+    cwSplitTip:       (h1, m5) => `Cache Writes: ${h1} für 1 Stunde (2x Input-Preis), ${m5} für 5 Minuten (1,25x)`,
     rowCRead:         'C.Read',
     settingLang:      'Sprache',
     settingLangDesc:  'Anzeigesprache für die Plugin-Oberfläche. Funktioniert ohne Neustart.',
@@ -516,11 +518,11 @@ const STRINGS = {
       },
       {
         title: 'C.Write — Cache Write',
-        body:  'Wenn Claude einen langen Kontext zum ersten Mal verarbeitet, kann er ihn in einen Prompt-Cache speichern ("schreiben"). Cache Write kostet ~1,25× des normalen Inputs — ein einmaliger Aufpreis, der zukünftige Einsparungen ermöglicht.',
+        body:  'Wenn Claude einen langen Kontext zum ersten Mal verarbeitet, speichert ("schreibt") er ihn in einen Prompt-Cache. Es gibt zwei Arten mit unterschiedlichem Preis: Ein 5-Minuten-Cache-Write kostet 1,25× des Input-Preises, ein 1-Stunden-Cache-Write 2×. In unseren eigenen Logs waren rund 90 % der Cache Writes von Claude Code im Abo die 1-Stunden-Art, Subagenten schrieben 5-Minuten-Caches. Fahr mit der Maus über die C.Write-Zeile, dann siehst du die Aufteilung für den Zeitraum. Cache Writes zählen außerdem auf das 5-Stunden-Limit (siehe "Was auf ein Limit einzahlt").',
       },
       {
         title: 'C.Read — Cache Read',
-        body:  'Jede Folgeanfrage, die denselben gecachten Kontext wiederverwendet, wird zu ~0,10× des Input-Preises bedient — etwa 10 x günstiger als eine erneute Verarbeitung. Ein hoher C.Read-Wert bedeutet effizientes Arbeiten mit gleichbleibendem Material.',
+        body:  'Jede Folgeanfrage, die denselben gecachten Kontext wiederverwendet, kostet nur einen Bruchteil des Input-Preises: 0,1× bei den meisten Modellen, 0,05× bei Opus 5.5 und Sonnet 5.5, 0,025× bei Fable 5.1 (Preisseite von Anthropic, Oktober 2026). Ein hoher C.Read-Wert bedeutet effizientes Arbeiten mit gleichbleibendem Material.',
       },
       {
         title: 'C.Write vs. C.Read — was das Verhältnis aussagt',
@@ -640,6 +642,7 @@ const STRINGS = {
     rowInput:         'Input',
     rowOutput:        'Output',
     rowCWrite:        'C.Write',
+    cwSplitTip:       (h1, m5) => `Écritures de cache : ${h1} pour 1 heure (2x le prix d’entrée), ${m5} pour 5 minutes (1,25x)`,
     rowCRead:         'C.Read',
     settingLang:      'Langue',
     settingLangDesc:  'Langue d\'affichage de l\'interface du plugin. Prend effet immédiatement.',
@@ -727,11 +730,11 @@ const STRINGS = {
       },
       {
         title: 'C.Write — Cache Write',
-        body:  'Lorsque Claude traite un long contexte pour la première fois, il peut le stocker (« écrire ») dans un cache de prompt. Cache Write coûte environ 1,25× le prix d\'un Input normal — un petit supplément initial qui permet des économies ultérieures.',
+        body:  'Lorsque Claude traite un long contexte pour la première fois, il le stocke (« écrit ») dans un cache de prompt. Il en existe deux types, facturés différemment : une écriture de cache de 5 minutes coûte 1,25× le prix d\'Input, une écriture de cache d\'1 heure coûte 2×. Dans nos propres journaux, environ 90 % des écritures de cache de Claude Code sur un abonnement étaient du type 1 heure, tandis que les sous-agents écrivaient des caches de 5 minutes. Survolez la ligne C.Write pour voir la répartition sur la période. Les écritures de cache comptent aussi pour la limite de 5 heures (voir « Ce qui compte pour une limite »).',
       },
       {
         title: 'C.Read — Cache Read',
-        body:  'Toute requête de suivi qui réutilise le même contexte mis en cache est servie à environ 0,10× le prix de l\'Input — soit environ 10× moins cher qu\'un nouveau traitement. Une valeur C.Read élevée indique que vous travaillez efficacement avec le même contenu.',
+        body:  'Toute requête de suivi qui réutilise le même contexte mis en cache ne coûte qu\'une fraction du prix d\'Input : 0,1× sur la plupart des modèles, 0,05× sur Opus 5.5 et Sonnet 5.5, 0,025× sur Fable 5.1 (page de tarifs d\'Anthropic, octobre 2026). Une valeur C.Read élevée indique que vous travaillez efficacement avec le même contenu.',
       },
       {
         title: 'C.Write vs C.Read — ce que le ratio indique',
@@ -851,6 +854,7 @@ const STRINGS = {
     rowInput:         'Input',
     rowOutput:        'Output',
     rowCWrite:        'C.Write',
+    cwSplitTip:       (h1, m5) => `Scritture di cache: ${h1} per 1 ora (2x il prezzo di input), ${m5} per 5 minuti (1,25x)`,
     rowCRead:         'C.Read',
     settingLang:      'Lingua',
     settingLangDesc:  'Lingua di visualizzazione per l\'interfaccia del plugin. Ha effetto immediato.',
@@ -938,11 +942,11 @@ const STRINGS = {
       },
       {
         title: 'C.Write — Cache Write',
-        body:  'Quando Claude elabora per la prima volta un contesto lungo, può memorizzarlo («scriverlo») in una cache del prompt. Cache Write costa 1,25 volte dell\'input normale — un piccolo sovrapprezzo iniziale che consente risparmi futuri.',
+        body:  'Quando Claude elabora per la prima volta un contesto lungo, lo memorizza («scrive») in una cache del prompt. Ne esistono due tipi, con prezzi diversi: una scrittura di cache da 5 minuti costa 1,25 volte il prezzo dell\'input, una da 1 ora costa 2 volte. Nei nostri log, circa il 90 % delle scritture di cache di Claude Code in abbonamento era del tipo da 1 ora, mentre i subagenti scrivevano cache da 5 minuti. Passa il mouse sulla riga C.Write per vedere la ripartizione nel periodo. Le scritture di cache contano anche per il limite di 5 ore (vedi «Cosa conta per un limite»).',
       },
       {
         title: 'C.Read — Cache Read',
-        body:  'Ogni richiesta successiva che riutilizza lo stesso contesto memorizzato nella cache viene gestita a circa 0,10 volte il prezzo dell\'input — approssimativamente 10 volte meno rispetto a una nuova elaborazione. Un valore C.Read elevato indica che stai lavorando in modo efficiente con lo stesso materiale.',
+        body:  'Ogni richiesta successiva che riutilizza lo stesso contesto memorizzato nella cache costa solo una frazione del prezzo dell\'input: 0,1 volte sulla maggior parte dei modelli, 0,05 volte su Opus 5.5 e Sonnet 5.5, 0,025 volte su Fable 5.1 (pagina dei prezzi di Anthropic, ottobre 2026). Un valore C.Read elevato indica che stai lavorando in modo efficiente con lo stesso materiale.',
       },
       {
         title: 'C.Write vs C.Read — cosa indica il rapporto',
@@ -1065,6 +1069,7 @@ const STRINGS = {
     rowInput:         'Entrada',
     rowOutput:        'Salida',
     rowCWrite:        'C.Escritura',
+    cwSplitTip:       (h1, m5) => `Escrituras de caché: ${h1} durante 1 hora (2x el precio de entrada), ${m5} durante 5 minutos (1,25x)`,
     rowCRead:         'C.Lectura',
     settingLang:      'Idioma',
     settingLangDesc:  'Idioma de la interfaz del plugin. Se aplica de inmediato.',
@@ -1152,11 +1157,11 @@ const STRINGS = {
       },
       {
         title: 'C.Escritura — escritura en caché',
-        body:  'Cuando Claude procesa por primera vez un contexto largo, puede guardarlo («escribirlo») en una caché de prompts. La escritura en caché cuesta ~1,25× la entrada normal — un pequeño sobrecoste por adelantado que desbloquea ahorros posteriores.',
+        body:  'Cuando Claude procesa por primera vez un contexto largo, lo guarda («escribe») en una caché de prompts. Hay dos tipos con precios distintos: una escritura de caché de 5 minutos cuesta 1,25× el precio de entrada, una de 1 hora cuesta 2×. En nuestros propios registros, cerca del 90 % de las escrituras de caché de Claude Code con suscripción fueron del tipo de 1 hora, mientras que los subagentes escribían cachés de 5 minutos. Pasa el ratón por la fila C.Escritura para ver el reparto del periodo. Las escrituras de caché también cuentan para el límite de 5 horas (ver «Qué cuenta para un límite»).',
       },
       {
         title: 'C.Lectura — lectura de caché',
-        body:  'Cualquier petición posterior que reutilice el mismo contexto en caché se sirve a ~0,10× el precio de entrada — unas 10 veces más barato que reprocesarlo. Un valor alto de C.Lectura significa que estás trabajando de forma eficiente con el mismo material.',
+        body:  'Cualquier petición posterior que reutilice el mismo contexto en caché cuesta solo una fracción del precio de entrada: 0,1× en la mayoría de los modelos, 0,05× en Opus 5.5 y Sonnet 5.5, 0,025× en Fable 5.1 (página de precios de Anthropic, octubre de 2026). Un valor alto de C.Lectura significa que estás trabajando de forma eficiente con el mismo material.',
       },
       {
         title: 'C.Escritura vs C.Lectura — qué dice la proporción',
@@ -1940,16 +1945,25 @@ function computeLimitState(rateLimitEvents, entriesAsc, nowDate, avgDailyFallbac
 }
 
 function aggregate(entries) {
-  const r = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, count: 0 };
+  const r = { input: 0, output: 0, cacheCreate: 0, cacheRead: 0, cacheCreate1h: 0, cacheCreate5m: 0, count: 0 };
   for (const e of entries) {
     r.input       += e.usage.input_tokens                || 0;
     r.output      += e.usage.output_tokens               || 0;
     r.cacheCreate += e.usage.cache_creation_input_tokens || 0;
     r.cacheRead   += e.usage.cache_read_input_tokens     || 0;
+    r.cacheCreate1h += e.usage.cache_creation_1h || 0;
+    r.cacheCreate5m += e.usage.cache_creation_5m || 0;
     r.count++;
   }
   r.billed = billedOf(r);
   return r;
+}
+
+// Tooltip for a C.Write row (2.1.0): the split into 1-hour and 5-minute cache writes, which are
+// priced differently. Only shown when the log carried the split at all (older logs do not).
+function cacheWriteTip(agg) {
+  if (!agg || !(agg.cacheCreate1h || agg.cacheCreate5m)) return '';
+  return t('cwSplitTip', fmtTokens(agg.cacheCreate1h || 0), fmtTokens(agg.cacheCreate5m || 0));
 }
 
 function groupByDay(entries, nDays) {
@@ -2227,6 +2241,11 @@ function parseUsageFromFile(filePath, minTimestamp, fileSize) {
               output_tokens:               msg.usage.output_tokens               || 0,
               cache_creation_input_tokens: msg.usage.cache_creation_input_tokens || 0,
               cache_read_input_tokens:     msg.usage.cache_read_input_tokens     || 0,
+              // 1-hour vs 5-minute cache writes (2.1.0, forum hint from aicost_tools, 05.10.2026).
+              // Priced differently (2x vs 1.25x input). Missing in older logs: then both stay 0
+              // and the C.Write tooltip simply says nothing about the split.
+              cache_creation_1h: (msg.usage.cache_creation && msg.usage.cache_creation.ephemeral_1h_input_tokens) || 0,
+              cache_creation_5m: (msg.usage.cache_creation && msg.usage.cache_creation.ephemeral_5m_input_tokens) || 0,
             }
           };
           // One API response, one count (v2.1, 06.10.2026). Claude Code writes the SAME response
@@ -3530,7 +3549,7 @@ class AnthropicUsageView extends obsidian.ItemView {
     const maxVal = Math.max(window5h.agg.input, window5h.agg.output, window5h.agg.cacheCreate, window5h.agg.cacheRead, 1);
     this._statRow(body, t('rowInput'),  window5h.agg.input,       maxVal, 'blue');
     this._statRow(body, t('rowOutput'), window5h.agg.output,      maxVal, 'green');
-    this._statRow(body, t('rowCWrite'), window5h.agg.cacheCreate, maxVal, 'purple');
+    this._statRow(body, t('rowCWrite'), window5h.agg.cacheCreate, maxVal, 'purple', cacheWriteTip(window5h.agg));
     this._statRow(body, t('rowCRead'),  window5h.agg.cacheRead,   maxVal, 'amber');
   }
 
@@ -3545,12 +3564,13 @@ class AnthropicUsageView extends obsidian.ItemView {
     const maxVal = Math.max(stats.input, stats.output, stats.cacheCreate, stats.cacheRead, 1);
     this._statRow(body, t('rowInput'),  stats.input,       maxVal, 'blue');
     this._statRow(body, t('rowOutput'), stats.output,      maxVal, 'green');
-    this._statRow(body, t('rowCWrite'), stats.cacheCreate, maxVal, 'purple');
+    this._statRow(body, t('rowCWrite'), stats.cacheCreate, maxVal, 'purple', cacheWriteTip(stats));
     this._statRow(body, t('rowCRead'),  stats.cacheRead,   maxVal, 'amber');
   }
 
-  _statRow(parent, label, value, max, color) {
+  _statRow(parent, label, value, max, color, tip) {
     const row = parent.createEl('div', { cls: 'au-stat-row' });
+    if (tip) row.title = tip;
     row.createEl('span', { cls: 'au-stat-lbl', text: label });
     row.createEl('span', { cls: `au-stat-val au-text-${color}`, text: fmtTokens(value) });
     const wrap = row.createEl('div', { cls: 'au-mini-bar-wrap' });
@@ -3592,15 +3612,16 @@ class AnthropicUsageView extends obsidian.ItemView {
     const baselineDays = Math.max(0, (d.retentionDays || DEFAULT_RETENTION_DAYS) - 1);
     this._statRowNextGen(body, t('rowInput'),  stats.input,       maxVal, 'blue',   verdictFor(sv.input),       baselineDays);
     this._statRowNextGen(body, t('rowOutput'), stats.output,      maxVal, 'green',  verdictFor(sv.output),      baselineDays);
-    this._statRowNextGen(body, t('rowCWrite'), stats.cacheCreate, maxVal, 'purple', verdictFor(sv.cacheCreate), baselineDays);
+    this._statRowNextGen(body, t('rowCWrite'), stats.cacheCreate, maxVal, 'purple', verdictFor(sv.cacheCreate), baselineDays, cacheWriteTip(stats));
     this._statRowNextGen(body, t('rowCRead'),  stats.cacheRead,   maxVal, 'amber',  verdictFor(sv.cacheRead),   baselineDays);
   }
 
   // Deliberate copy of _statRow(), not the same function with a branch — keeps Classic's
   // _statRow() truly unmodified. Same label/value/log-scale-bar structure (no row restructure,
   // no extra height), plus an optional compact verdict glyph after the bar.
-  _statRowNextGen(parent, label, value, max, color, verdict, baselineDays) {
+  _statRowNextGen(parent, label, value, max, color, verdict, baselineDays, tip) {
     const row = parent.createEl('div', { cls: 'au-stat-row au-stat-row-ng' });
+    if (tip) row.title = tip;
     // Colour chip in front of the label (v2.0, from Björn's mockup). It carries the token
     // type's own colour, so the row says which type it is before the label is even read —
     // and it ties the row to the bar further right, which uses the same colour.
@@ -5068,7 +5089,7 @@ function applyPeriod(nStr){
   else if(r>=3){h='Balanced usage.';t='Focused phases alternate with fresh tasks. You bring new context regularly but also reuse existing material across multiple requests.';}
   else if(r>=1){h='Exploratory mode.';t='You bring new context frequently — many different projects, short sessions, or frequent topic switches. Cache is created but rarely reused intensively.';}
   else{h='Minimal cache reuse.';t='Almost every request brings fresh context. Highly exploratory or many independent short sessions without repeating the same source material.';}
-  var hint='Cache Write costs ~1.25× regular input — you pay a premium to store the context. Cache Read costs ~0.10× — 10× cheaper to reuse than reprocess. The Reuse Factor (Read ÷ Write) shows whether your investment in caching is paying off.';
+  var hint='Cache Write costs 1.25× the input price for a 5-minute cache and 2× for a 1-hour cache (the usual kind for Claude Code on a subscription) — you pay a premium to store the context. Cache Read costs 0.1× (0.05× on Opus 5.5 and Sonnet 5.5) — far cheaper to reuse than reprocess. The Reuse Factor (Read ÷ Write) shows whether your investment in caching is paying off.';
   document.getElementById('ccExplain').innerHTML='<strong>'+h+'</strong> '+t+'<div class="hint">'+hint+'</div>';
 
   var cacheChartData={labels:slice.map(function(d){return d.label;}),datasets:[{label:'Cache Write',data:slice.map(function(d){return d.cacheCreate||0;}),borderColor:'#199E70',backgroundColor:'rgba(25,158,112,0.08)',tension:0.35,fill:true,pointRadius:2,pointHoverRadius:4},{label:'Cache Read',data:slice.map(function(d){return d.cacheRead||0;}),borderColor:'#9085E9',backgroundColor:'rgba(144,133,233,0.08)',tension:0.35,fill:true,pointRadius:2,pointHoverRadius:4}]};
@@ -5783,7 +5804,7 @@ class AnthropicUsageSettingTab extends obsidian.PluginSettingTab {
 // releases — see AnthropicUsagePlugin._maybeShowWhatsNew()).
 const WHATS_NEW_HIGHLIGHTS = {
   '2.1.0': [
-    'Your numbers will drop after this update, and here is why. Five things in this plugin were wrong, and two of them were claims we made ourselves in 2.0.0. All five are corrected. Details below and in the changelog',
+    'Your numbers will drop after this update, and here is why. Six things in this plugin were wrong, and two of them were claims we made ourselves in 2.0.0. All six are corrected. Details below and in the changelog',
 
     'Long responses were counted many times over. Claude Code writes one response to its log once per content block, up to about 75 times, and the plugin added every line. Each response is now counted once',
 
@@ -5792,6 +5813,8 @@ const WHATS_NEW_HIGHLIGHTS = {
     'We were wrong about cache in 2.0.0. Measured against the official percentages, cache writes clearly count toward the 5-hour window, cache reads a little. Our earlier analysis ran on the double-counted totals. The plugin still counts input and output only, so the official figure can run ahead, most of all after a pause in a long session',
 
     'The weekly estimate could sit far too low (on our data 1.14M against about 2.7M), and the "29-day average" behind Today was really every stored day. Labels and help now say what is actually computed. The Today ring is neutral grey: a busy day is no limit',
+
+    'Cache prices were incomplete: a 1-hour cache write costs 2x the input price, not 1.25x, and it is the usual kind for Claude Code on a subscription (thanks to a hint in the Obsidian forum). Hover over a C.Write row to see the 1-hour and 5-minute split',
 
     'New, optional: a small status line script (extras/ratelimit-statusline.js) logs the official 5-hour and weekly percentages that Claude Code reports. With it, the plugin uses the official window start and shows the official percentage at every reading. Without it, nothing changes',
   ],

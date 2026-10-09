@@ -178,10 +178,10 @@ Model colours deliberately avoid green, amber, and red. In this plugin those thr
 
 Cache Write (C.Write) and Cache Read (C.Read) are shown as separate rows throughout the sidebar because they have very different cost implications:
 
-- **C.Write** (aqua) — approximately 1.25× standard input price. A one-time cost to establish the cache.
-- **C.Read** (violet) — approximately 0.10× standard input price. Ten times cheaper than regular input.
+- **C.Write** (aqua) — 1.25× the input price for a 5-minute cache, 2× for a 1-hour cache. In our own logs about 90% of the cache writes from Claude Code on a subscription were the 1-hour kind, while subagents wrote 5-minute caches. Hover over a C.Write row to see the split for that period (since 2.1.0).
+- **C.Read** (violet) — 0.1× the input price on most models, 0.05× on Opus 5.5 and Sonnet 5.5, 0.025× on Fable 5.1 (Anthropic pricing page, October 2026).
 
-Those are cost ratios, not limit ratios. Neither cache type counts toward the 5-hour window or the weekly cap — that was measured against observed limit hits, not assumed from pricing.
+Those are cost ratios. For the limits, measurements against the official percentages show that cache writes clearly count toward the 5-hour window and cache reads a little; the 2.0.0 statement that neither counts was wrong (see the 2.1.0 changelog). The plugin's own figures still count input and output only. Thanks to a hint in the Obsidian forum for the 1-hour versus 5-minute distinction.
 
 The ratio C.Read ÷ C.Write is the Reuse Factor. A high value means the same context is being reused efficiently across many requests.
 
@@ -429,7 +429,7 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 
 ### v2.1.0 — October 2026
 
-Five things in this plugin were wrong, and two of them were claims we made ourselves in the 2.0.0 notes below. All five are corrected here. Your numbers will change after updating, mostly downward, and this is why.
+Six things in this plugin were wrong, and two of them were claims we made ourselves in the 2.0.0 notes below. All six are corrected here. Your numbers will change after updating, mostly downward, and this is why.
 
 **Corrections**
 
@@ -438,6 +438,7 @@ Five things in this plugin were wrong, and two of them were claims we made ourse
 - **Cache does count. We were wrong about this in 2.0.0.** The 2.0.0 notes say cache reads and writes do not count toward a limit, "verified against 80+ observed limit hits". That analysis ran on the inflated totals of the first error above, so it could not show what it claimed. Measured since against the official percentages Claude Code reports: cache writes clearly count toward the 5-hour window, cache reads a little. One example from our own data: a long session that had to rebuild its cache after a pause took 17% of a fresh window on just 4.4K input and output tokens. The plugin's figures still count input and output only, so the official percentage can run ahead of them, most of all at the start of a window. The glossary entry and help section "What counts toward a limit" are rewritten
 - **The weekly estimate could sit far too low.** It is the lowest week that ever hit the weekly cap. On our own data that was 1.14M tokens against about 2.7M implied by the official percentages, and the sidebar showed 141% while Claude Code said 61%. Cache use that the plugin does not count also drives you into the cap, so a week can end at a low token figure. Without the new status line feed (below) the estimate still comes from your hits, and the help says plainly that it can be too low. With the feed, the official figure is used
 - **"29-day average" was not what we computed.** The 2.0.0 notes and the dashboard say Today is compared against your 29-day average. Since 1.7 the plugin has in fact used every day Claude Code keeps on disk (your retention setting). The labels now say so; the calculation stays
+- **Cache prices in the help were incomplete and partly out of date.** We wrote that a cache write costs about 1.25× the input price. That is the 5-minute cache; the 1-hour cache costs 2×, and it is the usual kind for Claude Code on a subscription (about 90% in our own logs). Cache reads cost 0.05× rather than 0.1× on Opus 5.5 and Sonnet 5.5. The price table on the help page also lacked the newest models and still called the Sonnet 5 price introductory. A user in the Obsidian forum pointed out the 1-hour cache in October, and we promised this correction for 2.1. Glossary, README and help now follow the official pricing page as of October 2026
 
 **Changed**
 
@@ -447,11 +448,13 @@ Five things in this plugin were wrong, and two of them were claims we made ourse
 
 - **Optional: limits anchored on the official percentages.** Claude Code passes the official 5-hour and weekly percentages to any status line script. A small script shipped with this release (`extras/ratelimit-statusline.js`) shows them in your status line and logs them on your machine. When that log exists, the 5-hour window starts when the official window starts, and both limit rings show exactly the official percentage at every reading, then count on with your tokens until the next one. Without the script nothing changes. Setup: see the help page, section "Official percentages from your status line", or the README section of the same name
 - **Glossary entry "Today ring"**, and "What counts toward a limit" rewritten, in all five languages
+- **C.Write tooltip with the 1-hour and 5-minute split.** Hover over any C.Write row to see how much of it was written for one hour and how much for five minutes. We looked at splitting the row itself and decided against it: the sidebar has no room for a fifth row, and the plugin does not compute costs
 
 **Known limits**
 
 - Between two readings the plugin adds input and output only. A cache rebuild (new chat, expired cache) appears with the next reading
 - Archived days older than your retention window keep their old figures: the logs needed to recount them no longer exist. Days still inside the window are rewritten once after updating
+- Whether 1-hour and 5-minute cache writes weigh differently on the limit is still open. In every segment we could measure, the cache writes were all of the 1-hour kind, so a separate weight for the 5-minute kind cannot be determined yet. We keep measuring
 
 ### v2.0.0 — October 2026
 
