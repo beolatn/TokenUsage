@@ -826,6 +826,8 @@
 .au-pulse-val.au-pulse-val-good{color:var(--au-good);}
 .au-pulse-val.au-pulse-val-warn{color:var(--au-warn);}
 .au-pulse-val.au-pulse-val-bad {color:var(--au-red);}
+/* Today-Ring neutral (Bjoern, 09.10.2026): kein Limit, nur geaenderte Arbeitsweise. */
+.au-pulse-val.au-pulse-val-neutral{color:var(--text-normal);}
 .au-pulse-track{height:4px;border-radius:2px;background:var(--background-modifier-border);overflow:hidden;}
 .au-pulse-fill{height:100%;border-radius:2px;}
 .au-pulse-fill.au-pulse-good{background:var(--au-good);}

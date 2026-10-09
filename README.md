@@ -89,7 +89,25 @@ Because the plugin reads what Claude Code writes to disk, it covers **every way 
 
 It cannot show **ordinary chat** — the conversations you have in the Claude desktop app or on claude.ai. Those never write token counts to your machine. The only usage signal exposed there is a rounded percentage of your current limit, not the per-request token counts this plugin is built on.
 
-This matters for one number in particular: the **rate limit estimates** in the dashboard are derived from how many tokens were counted when a limit was actually hit. Chat usage draws on the same plan limit but leaves no local trace, so if you use chat alongside Claude Code, the real limit sits somewhat higher than the estimate shown.
+This matters for one number in particular: the **rate limit estimates** in the dashboard are derived from how many tokens were counted when a limit was actually hit. Chat usage draws on the same plan limit but leaves no local trace, so if you use chat alongside Claude Code, the real limit sits somewhat higher than the estimate shown. The optional status line feed below removes this blind spot, because the official percentage includes everything.
+
+### Optional: official percentages from your status line (since 2.1.0)
+
+Claude Code hands every status line script the official rate-limit percentages of your plan, for the 5-hour window and for the week. A small script that ships with the plugin, [`extras/ratelimit-statusline.js`](extras/ratelimit-statusline.js), shows them in your status line and writes them to `~/.claude/ratelimit-log.jsonl`. When that file exists, Token Usage anchors its limits on it:
+
+- the 5-hour window starts when the official window starts, even if it was opened outside your logs (claude.ai, another device, another tool)
+- at every reading, both limit rings show exactly the official percentage, and between readings they count on with your tokens
+- the weekly limit and the 5-hour limit come from the official figures instead of from your own limit hits
+
+**Setup:** copy the script to `~/.claude/ratelimit-statusline.js` and add this to `~/.claude/settings.json`:
+
+```json
+"statusLine": { "type": "command", "command": "node ~/.claude/ratelimit-statusline.js" }
+```
+
+If `~` is not expanded on your system, use the full path (for example `node C:/Users/<you>/.claude/ratelimit-statusline.js`). Restart Claude Code; the status line then reads `5h 12% | week 34%`.
+
+**Good to know:** only subscription plans (Pro, Max) report these percentages. Readings are written while a status line is shown, that is in the interactive Claude Code terminal. Between two readings the plugin can only add the tokens it sees, and it counts input and output only, so a cache rebuild appears with the next reading. Nothing leaves your machine. Without the script, everything works as before.
 
 ---
 
@@ -127,7 +145,7 @@ Every JSONL entry Claude Code writes already carries a `cwd` field — the exact
 
 ### Current 5h Window
 
-The current anchored 5-hour window — the period Anthropic actually meters. It opens with your first message and runs exactly five hours; a new window only starts once that span has fully elapsed, chained in fixed five-hour blocks regardless of how much idle time falls in between. This is a real window with a real start time, not a sum of the last five hours — and it is independent of the weekly reset, which runs on its own schedule and does not also start a fresh 5-hour window. Shows Input, Output, C.Write, and C.Read as separate rows; only Input and Output count toward the limit. Sub-label: "Anchored window · counts toward rate limit".
+The current anchored 5-hour window — the period Anthropic actually meters. It opens with your first message and runs exactly five hours; a new window only starts once that span has fully elapsed, chained in fixed five-hour blocks regardless of how much idle time falls in between. This is a real window with a real start time, not a sum of the last five hours — and it is independent of the weekly reset, which runs on its own schedule and does not also start a fresh 5-hour window. Shows Input, Output, C.Write, and C.Read as separate rows; the plugin counts Input and Output against the limit (officially, cache writes count as well, see the 2.1.0 changelog). Sub-label: "Anchored window · counts toward rate limit".
 
 The sidebar is organised as an icon rail with four pages: **Today**, **Calendar**, **Analytics**, and **Settings**. The sections below live on Today; the 7-day and N-day figures sit on Analytics as KPI tiles with sparklines.
 
@@ -409,15 +427,41 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
 
+### v2.1.0 — October 2026
+
+Five things in this plugin were wrong, and two of them were claims we made ourselves in the 2.0.0 notes below. All five are corrected here. Your numbers will change after updating, mostly downward, and this is why.
+
+**Corrections**
+
+- **Long responses were counted many times over.** Claude Code writes a single response to its session log once per content block, and for long streamed output up to about 75 times, each line repeating the full token counts of that one response. The plugin added up every line, so one reply of 7.7K output tokens showed up as roughly 580K. In a measured 30-minute stretch the sidebar displayed 1.31M tokens against a real 70K: the 5-hour ring jumped to 448%, Today to 330%, This Week to 114%, although nothing out of the ordinary had happened. Each response is now counted exactly once, identified by its message ID and request ID, and the line with the highest output count wins. Short replies were affected too, at about a factor of two, so your figures may be a little lower after updating. Because the 5-hour estimate is derived from the same counts, it may shift slightly as well
+- **Subagent work was never counted.** When Claude Code runs subagents (the Agent tool), it writes their work into a subfolder of the session. The plugin never looked there, so those tokens were missing from every figure. On our own data that was 0.7% of the last 30 days, but up to 47K tokens inside a single 5-hour window that hit its limit. Subagent logs are now read and counted with the session they belong to
+- **Cache does count. We were wrong about this in 2.0.0.** The 2.0.0 notes say cache reads and writes do not count toward a limit, "verified against 80+ observed limit hits". That analysis ran on the inflated totals of the first error above, so it could not show what it claimed. Measured since against the official percentages Claude Code reports: cache writes clearly count toward the 5-hour window, cache reads a little. One example from our own data: a long session that had to rebuild its cache after a pause took 17% of a fresh window on just 4.4K input and output tokens. The plugin's figures still count input and output only, so the official percentage can run ahead of them, most of all at the start of a window. The glossary entry and help section "What counts toward a limit" are rewritten
+- **The weekly estimate could sit far too low.** It is the lowest week that ever hit the weekly cap. On our own data that was 1.14M tokens against about 2.7M implied by the official percentages, and the sidebar showed 141% while Claude Code said 61%. Cache use that the plugin does not count also drives you into the cap, so a week can end at a low token figure. Without the new status line feed (below) the estimate still comes from your hits, and the help says plainly that it can be too low. With the feed, the official figure is used
+- **"29-day average" was not what we computed.** The 2.0.0 notes and the dashboard say Today is compared against your 29-day average. Since 1.7 the plugin has in fact used every day Claude Code keeps on disk (your retention setting). The labels now say so; the calculation stays
+
+**Changed**
+
+- **The Today ring is neutral grey.** There is no daily limit, and green, amber and red next to two real limits read like a warning. A busy day is a change in how you work, not a risk. The dashboard panel names the multiple instead ("2.5x your usual day")
+
+**New**
+
+- **Optional: limits anchored on the official percentages.** Claude Code passes the official 5-hour and weekly percentages to any status line script. A small script shipped with this release (`extras/ratelimit-statusline.js`) shows them in your status line and logs them on your machine. When that log exists, the 5-hour window starts when the official window starts, and both limit rings show exactly the official percentage at every reading, then count on with your tokens until the next one. Without the script nothing changes. Setup: see the help page, section "Official percentages from your status line", or the README section of the same name
+- **Glossary entry "Today ring"**, and "What counts toward a limit" rewritten, in all five languages
+
+**Known limits**
+
+- Between two readings the plugin adds input and output only. A cache rebuild (new chat, expired cache) appears with the next reading
+- Archived days older than your retention window keep their old figures: the logs needed to recount them no longer exist. Days still inside the window are rewritten once after updating
+
 ### v2.0.0 — October 2026
 
 Three things this plugin believed about Anthropic's rate limits were wrong. All three are corrected here, which is why your numbers may look different after updating.
 
 **Corrections**
 
-- **There is no daily limit.** Earlier versions measured Today against "a fair daily share" of the weekly cap — a number the plugin invented by dividing the weekly limit by seven. Anthropic enforces no such limit, so that comparison held a real day against an imaginary budget. Today is now shown against your own 29-day average per active day: it claims no quota, it tells you whether today is busier or quieter than usual
+- **There is no daily limit.** Earlier versions measured Today against "a fair daily share" of the weekly cap — a number the plugin invented by dividing the weekly limit by seven. Anthropic enforces no such limit, so that comparison held a real day against an imaginary budget. Today is now shown against your own 29-day average per active day: it claims no quota, it tells you whether today is busier or quieter than usual. *(Partly wrong: it was never 29 days but every stored day. Corrected in 2.1.0.)*
 - **The 5-hour window is anchored, not rolling.** It opens with your first message and runs exactly five hours; a new window only starts once that span has fully elapsed, chained in fixed blocks regardless of pauses in between. Previous versions summed "the last five hours from now", which at a window turnover mixed the tail of the old window with the head of the new one — a figure that belonged to neither, precisely when you most wanted to see that your budget had reset
-- **Only input and output count toward a limit.** Cache reads and cache writes do not. This was verified against 80+ observed limit hits rather than assumed: a weighted model was tested, and the weights that best explained the real data were zero for both cache types. The resulting median 5-hour budget matches what users actually observe
+- **Only input and output count toward a limit.** Cache reads and cache writes do not. This was verified against 80+ observed limit hits rather than assumed: a weighted model was tested, and the weights that best explained the real data were zero for both cache types. The resulting median 5-hour budget matches what users actually observe. *(Wrong: the analysis ran on double-counted totals, and cache writes do count. Corrected in 2.1.0.)*
 
 **New**
 

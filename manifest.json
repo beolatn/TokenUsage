@@ -1,7 +1,7 @@
 {
   "id": "token-usage",
   "name": "Token Usage",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "minAppVersion": "1.4.0",
   "description": "Live Claude Code token tracking with empirical rate-limit estimates — sidebar with an activity heatmap, an HTML dashboard with per-vault/project breakdown. No API key needed.",
   "author": "Björn-Olaf Lange",
