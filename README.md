@@ -93,21 +93,22 @@ This matters for one number in particular: the **rate limit estimates** in the d
 
 ### Optional: official percentages from your status line (since 2.1.0)
 
-Claude Code hands every status line script the official rate-limit percentages of your plan, for the 5-hour window and for the week. A small script that ships with the plugin, [`extras/ratelimit-statusline.js`](extras/ratelimit-statusline.js), shows them in your status line and writes them to `~/.claude/ratelimit-log.jsonl`. When that file exists, Token Usage anchors its limits on it:
+Claude Code knows the official rate-limit percentages of your plan, the numbers `/usage` shows. Two small scripts in [`extras/`](extras/) write them to `~/.claude/ratelimit-log.jsonl`. When that file exists, Token Usage anchors its limits on it:
 
 - the 5-hour window starts when the official window starts, even if it was opened outside your logs (claude.ai, another device, another tool)
 - at every reading, both limit rings show exactly the official percentage, and between readings they count on with your tokens
 - the weekly limit and the 5-hour limit come from the official figures instead of from your own limit hits
 
-**Setup:** copy the script to `~/.claude/ratelimit-statusline.js` and add this to `~/.claude/settings.json`:
+**Which script you need depends on where you work:**
 
-```json
-"statusLine": { "type": "command", "command": "node ~/.claude/ratelimit-statusline.js" }
-```
+- **In a terminal:** [`ratelimit-statusline.js`](extras/ratelimit-statusline.js) as your Claude Code status line. Free, and readings come in while you work.
+- **Inside Obsidian or another client without a status line:** [`ratelimit-poll.js`](extras/ratelimit-poll.js), run on a schedule (for example three times a day). Each run is a tiny real request, and it opens a 5-hour window if none is open at that moment.
 
-If `~` is not expanded on your system, use the full path (for example `node C:/Users/<you>/.claude/ratelimit-statusline.js`). Restart Claude Code; the status line then reads `5h 12% | week 34%`.
+**You need:** a Pro or Max subscription, **Node.js** (check with `node --version`; Claude Code installed with the native installer does not bring it along), a recent Claude Code version, and for the poll the Claude Code CLI.
 
-**Good to know:** only subscription plans (Pro, Max) report these percentages. Readings are written while a status line is shown, that is in the interactive Claude Code terminal. Between two readings the plugin can only add the tokens it sees, and it counts input and output only, so a cache rebuild appears with the next reading. Nothing leaves your machine. Without the script, everything works as before.
+**The full guide** with step-by-step setup for Windows, macOS and Linux, checks, troubleshooting, privacy and removal: [`extras/README.md`](extras/README.md). Without either script, everything works as before.
+
+*Updated 10.10.2026: the first version of this section did not mention Node.js and offered only the status line, which does not run in clients like Obsidian. Both are added.*
 
 ---
 

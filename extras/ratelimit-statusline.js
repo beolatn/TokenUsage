@@ -5,6 +5,11 @@
 // one line per reading to ~/.claude/ratelimit-log.jsonl. When that file exists, the plugin anchors
 // its limits on these official figures instead of estimating them from your own limit hits.
 //
+// Full guide (requirements, both options, checks, troubleshooting): extras/README.md in this repository.
+// Needs Node.js (check with "node --version"). Claude Code installed with the native installer does
+// not bring Node.js along. Working inside Obsidian or another client without a status line? Then
+// this script gets few readings; see ratelimit-poll.js.
+//
 // Setup:
 //   1. Copy this file to ~/.claude/ratelimit-statusline.js
 //   2. Add this to ~/.claude/settings.json (merge it if the file already has other settings):
