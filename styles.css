@@ -313,8 +313,9 @@
   user-select: none;
 }
 .au-dheat-hdr .au-chevron { flex-shrink: 0; }
-/* Zugeklappt braucht der Kopf keinen Abstand nach unten mehr. */
-.au-dheat:has(.au-dheat-content[style*="none"]) .au-dheat-hdr { margin-bottom: 0; }
+/* Zugeklappt (Klasse am Abschnitt, seit 2.5): Inhalt weg, Kopf ohne Abstand nach unten. */
+.au-dheat.is-collapsed .au-dheat-content { display: none; }
+.au-dheat.is-collapsed .au-dheat-hdr { margin-bottom: 0; }
 .au-dheat-ico {
   width: 24px;
   height: 24px;

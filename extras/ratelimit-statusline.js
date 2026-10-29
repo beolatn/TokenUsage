@@ -2,8 +2,8 @@
 //
 // What it does: Claude Code hands every status line script the OFFICIAL rate-limit percentages
 // of your plan (5-hour window and week). This script shows them in your status line and appends
-// one line per reading to ~/.claude/ratelimit-log.jsonl. When that file exists, the plugin anchors
-// its limits on these official figures instead of estimating them from your own limit hits.
+// one line per reading to ~/.claude/ratelimit-log.jsonl. Since 2.5 the plugin shows a limit
+// percentage only when it comes from this file, always with the time of the reading.
 //
 // Full guide (requirements, both options, checks, troubleshooting): extras/README.md in this repository.
 // Needs Node.js (check with "node --version"). Claude Code installed with the native installer does
@@ -20,7 +20,7 @@
 //
 // Good to know:
 //   - Only subscription plans (Pro, Max) report these percentages. With an API key there is
-//     nothing to log, and the plugin keeps estimating as before.
+//     nothing to log, and the plugin shows counted tokens without percentages.
 //   - A reading is written only while a status line is shown, that is in the interactive Claude
 //     Code terminal. Clients without a status line do not produce readings.
 //   - Written only when a value changed or five minutes passed, so the file stays small.
@@ -53,6 +53,13 @@ process.stdin.on('end', () => {
       h5: f ? { pct: r1(f.used_percentage), resets: f.resets_at } : null,
       wk: w ? { pct: r1(w.used_percentage), resets: w.resets_at } : null,
     };
+    // Any further window Claude Code reports (for example a separate weekly limit for one model)
+    // is kept under "more" (2.5). The plugin shows it only if it is there.
+    for (const k of Object.keys(rl)) {
+      if (k === 'five_hour' || k === 'seven_day') continue;
+      const x = rl[k];
+      if (x && typeof x.used_percentage === 'number') (rec.more = rec.more || {})[k] = { pct: r1(x.used_percentage), resets: x.resets_at };
+    }
     out = (f ? '5h ' + Math.round(f.used_percentage) + '%' : '5h ?')
         + ' | ' + (w ? 'week ' + Math.round(w.used_percentage) + '%' : 'week ?');
     if (f || w) {

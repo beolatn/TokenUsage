@@ -4,7 +4,7 @@ Token Usage is an Obsidian plugin that tracks Claude Code token consumption from
 
 Instead of relying on API access or external dashboards, Token Usage reads Claude Code's local JSONL files and displays real-time token statistics directly inside Obsidian — broken down by type, time range, and model.
 
-**[Full documentation & manual](https://www.langeatn.de/media/token-usage/)** — installation, data sources & transparency, core concepts, settings reference, and an FAQ, all on one searchable page (English, German, French).
+**[Full documentation & manual](https://www.langeatn.de/media/token-usage/)** — installation, data sources & transparency, core concepts, settings reference, and an FAQ, all on one searchable page (English, German, French, Spanish, Italian).
 
 > **For power users:** Token Usage tracking is machine-wide by default (see [How It Works](#how-it-works)) — but the **[Vault / Project Breakdown](#vault--project-breakdown)** splits that back down by working directory, so you can see exactly which client, project, or vault consumed how many tokens and when. Export it as a standalone Markdown report to hand to a client as a usage/billing reference.
 
@@ -20,10 +20,11 @@ Instead of relying on API access or external dashboards, Token Usage reads Claud
 - Logarithmic scale for minibar widths — keeps all four token types visually proportional even across large magnitude differences
 - Spike warning — amber badge when today's usage is ≥ 2× your personal recent average (window follows your Claude data retention setting)
 - Collapsible sections — all five time-range sections fold individually, state persists across refreshes
-- **Activity heatmap of your billing week** — one row per calendar day, one cell per two hours. Colour shows pace rather than volume: red marks the rate at which you would arrive exactly at the 5-hour wall as the window closes. Collapsible, with an Active Days panel beside it
+- **Percentages only from Anthropic** (since 2.5) — the 5-hour and week rings show a limit percentage only when Anthropic reported it, with the time of the reading (optional feed, see below). Without it you see counted tokens, the time to the reset, and the span at which your 5-hour window has filled up so far
+- **Activity heatmap of your billing week** — one row per calendar day, one cell per two hours, each cell measured against your own usual 2-hour block. Collapsible, with an Active Days panel beside it
 - **Two limits, no invented third** — Anthropic enforces a 5-hour window and a weekly cap. There is no daily limit, so the Today figure is not a quota; it compares you against your own recent average per active day
-- **The weekly reset calibrates itself** — the weekly cap resets at an hour that differs per account. The plugin reads that hour out of your own session history and says in Settings whether the value was detected or set by hand
-- Rate limit tracking — session and weekly limit hits auto-detected from local JSONL files, with threshold estimates and 6-week billing chart in the dashboard
+- **The weekly reset calibrates itself** — the weekly cap resets at a moment that differs per account. The plugin takes it from the feed or from your own weekly-limit message, follows daylight saving, and says in Settings where the value came from
+- Rate limit tracking — session and weekly limit hits auto-detected from local JSONL files, with the span of your 5-hour hits and a 6-week billing chart in the dashboard
 - Model distribution — usage split by Haiku, Sonnet, Opus, and Fable
 - HTML dashboard with 30-day charts, model donut, top sessions table, cache efficiency analysis, and rate limit history
 - Markdown report export directly into your vault
@@ -51,11 +52,9 @@ Claude Code already stores detailed usage information locally in JSONL session f
 
 Token Usage brings those insights directly into Obsidian, where many users already manage their projects, notes, and knowledge base.
 
-Anthropic doesn't publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits. Not a guess, not marketing language — a number built from what actually happened on your account.
+Anthropic doesn't publish its limits in tokens. Up to 2.1, Token Usage estimated them from your own limit hits. Measured against the official percentages, that estimate turned out far too imprecise for the 5-hour window (36 points off on average), because how fast a window fills depends mostly on how much context a session carries, which the local logs cannot tell reliably. So since 2.5 the rule is simple: a percentage for a limit is shown only when it comes from Anthropic, always with the time of the reading. Everything else in the plugin is counted, not estimated.
 
-The estimate isn't static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.
-
-The 5-hour estimate is shown as a median together with a usual band, the middle half of your observed hits. The same limit is rarely reached at exactly the same total, because other Claude use that Token Usage cannot see (such as claude.ai in the browser) draws on the same limit, so one number alone would look more precise than it is.
+What the plugin can say from your own data is shown as what it is: the span of token counts at which your 5-hour window has filled up so far. It is wide, and that is the point.
 
 ---
 
@@ -89,24 +88,24 @@ Because the plugin reads what Claude Code writes to disk, it covers **every way 
 
 It cannot show **ordinary chat** — the conversations you have in the Claude desktop app or on claude.ai. Those never write token counts to your machine. The only usage signal exposed there is a rounded percentage of your current limit, not the per-request token counts this plugin is built on.
 
-This matters for one number in particular: the **rate limit estimates** in the dashboard are derived from how many tokens were counted when a limit was actually hit. Chat usage draws on the same plan limit but leaves no local trace, so if you use chat alongside Claude Code, the real limit sits somewhat higher than the estimate shown. The optional status line feed below removes this blind spot, because the official percentage includes everything.
+This matters for one figure in particular: the **span of your limit hits** counts the tokens seen when a limit was actually hit. Chat usage draws on the same plan limit but leaves no local trace, which is one reason the span is wide. The official percentages from the optional feed below include everything.
 
 ### Optional: official percentages from your status line (since 2.1.0)
 
-Claude Code knows the official rate-limit percentages of your plan, the numbers `/usage` shows. Two small scripts in [`extras/`](extras/) write them to `~/.claude/ratelimit-log.jsonl`. When that file exists, Token Usage anchors its limits on it:
+Claude Code knows the official rate-limit percentages of your plan, the numbers `/usage` shows. Two small scripts in [`extras/`](extras/) write them to `~/.claude/ratelimit-log.jsonl`. Since 2.5 this file is the only source of limit percentages in Token Usage:
 
-- the 5-hour window starts when the official window starts, even if it was opened outside your logs (claude.ai, another device, another tool)
-- at every reading, both limit rings show exactly the official percentage, and between readings they count on with your tokens
-- the weekly limit and the 5-hour limit come from the official figures instead of from your own limit hits
+- the 5-hour ring shows the official percentage from a reading taken in the current window, with its time and the tokens counted since. A reading from an earlier window is not shown
+- the week ring shows the official percentage, and between two readings carries it forward with your counted tokens, labelled "projected". After a weekly reset without a new reading it carries on from 0% with last week's limit, labelled "projected since reset"
+- the 5-hour window starts when the official window starts, even if it was opened outside your logs (claude.ai, another device, another tool), and the weekly reset is taken from the feed to the minute
 
 **Which script you need depends on where you work:**
 
 - **In a terminal:** [`ratelimit-statusline.js`](extras/ratelimit-statusline.js) as your Claude Code status line. Free, and readings come in while you work.
-- **Inside Obsidian or another client without a status line:** [`ratelimit-poll.js`](extras/ratelimit-poll.js), run on a schedule (for example three times a day). Each run is a tiny real request, and it opens a 5-hour window if none is open at that moment.
+- **Inside Obsidian or another client without a status line:** [`ratelimit-poll.js`](extras/ratelimit-poll.js), run on a schedule. Recommended since 2.5: every 30 minutes with `--only-when-active`, so it asks only while you work and the 5-hour ring shows an official value most of that time. Each run that asks is a tiny real request; at fixed times it opens a 5-hour window if none is open at that moment.
 
 **You need:** a Pro or Max subscription, **Node.js** (check with `node --version`; Claude Code installed with the native installer does not bring it along), a recent Claude Code version, and for the poll the Claude Code CLI.
 
-**The full guide** with step-by-step setup for Windows, macOS and Linux, checks, troubleshooting, privacy and removal: [`extras/README.md`](extras/README.md). Without either script, everything works as before.
+**The full guide** with step-by-step setup for Windows, macOS and Linux, checks, troubleshooting, privacy and removal: [`extras/README.md`](extras/README.md). Without either script, the rings for the 5-hour window and the week stay grey and show counted tokens and the time to the reset; everything else works the same.
 
 *Updated 10.10.2026: the first version of this section did not mention Node.js and offered only the status line, which does not run in clients like Obsidian. Both are added.*
 
@@ -138,7 +137,7 @@ Every JSONL entry Claude Code writes already carries a `cwd` field — the exact
 
 ![Token Usage dashboard](docs/screenshot.png)
 
-*The dashboard: where you stand against your 5-hour window and your weekly limit, both estimated from your own measured history.*
+*The dashboard in 2.5, with sample data and the optional feed: percentages only from Anthropic, the week projected from the last official value.*
 
 ---
 
@@ -219,19 +218,19 @@ The glossary explains:
 - What C.Write and C.Read mean and why they matter
 - How to read the Reuse Factor
 - What the anchored 5-hour window represents and why the countdown shows a tilde (~)
-- **What counts toward a limit** — the two real limits, why there is no daily one, and why cache tokens do not count
-- **How to read the activity heatmap** — why it spans eight rows, and why colour means pace rather than volume
+- **What counts toward a limit** — the two real limits, why there is no daily one, what counts (input, output, and cache writes clearly) and why percentages come from Anthropic only
+- **How to read the activity heatmap** — why it spans eight rows, and what the colours compare against
 - **Exporting your data** — the two CSV routes and where each one writes
-- **The weekly reset** — how the plugin detects your reset hour and what to do if it cannot
+- **The weekly reset** — where the plugin takes your reset from and how it follows daylight saving
 - How the three time views (5-hour window, This Session, Today) relate to each other
-- How rate limit estimates are derived from your own history
+- **Your limit hits and the span** — why there is no estimated limit any more
 - How the model colors map to model families
 - How sessions are counted
 - What is and is not measured
 - The archive and long-term data
 - Approximate API cost reference per model — costs, not limits
 
-A link at the bottom of the glossary opens the full documentation page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser — installation, data sources & transparency, core concepts, the archive, the dashboard, every setting, pricing, and an FAQ, all on one searchable page. The page is available in English, German, French, and Spanish.
+A link at the bottom of the glossary opens the full documentation page at [langeatn.de/media/token-usage/](https://www.langeatn.de/media/token-usage/) in your browser — installation, data sources & transparency, core concepts, the archive, the dashboard, every setting, pricing, and an FAQ, all on one searchable page. The page is available in English, German, French, Spanish and, since 2.5, Italian, each with the same sections.
 
 ---
 
@@ -428,6 +427,46 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 
 ## Changelog
 
+### v2.5.0 — October 2026
+
+Percentages now come from Anthropic only. This is the biggest change since 2.0, and it starts with a decision of ours that was wrong. The version jumps from 2.1 to 2.5 to make that visible.
+
+**Changed**
+
+- **Percentages come from Anthropic only.** Up to 2.1, Token Usage estimated a percentage for the 5-hour window and for the week, either from your own limit hits or extrapolated from the feed. We put that estimate next to the official figures for eleven days. For the 5-hour window it was off by 36 points on average, and at the moment a window was officially full, our ring stood anywhere between 61 and 217 percent (our own measurement, 37 readings, 6 to 17 October 2026). How fast a window fills up depends heavily on how much context a session carries along, and the local logs cannot tell that reliably. The rings suggested a precision they never had. That was our decision, and it was wrong. From 2.5 on, one simple rule applies: we only show a percentage for a limit when it comes from Anthropic, together with the time it was read. For that you need the feed (setup on the help page). We make one exception for the week: between two readings we carry the last official figure forward with your counted tokens and label it as such, because the weekly limit proved stable in the same measurement (1.2 points off on average). Without the feed you see what we know for certain: your tokens in the current window and in the week, the time until the reset, and the range at which your 5-hour window has filled up so far
+- **The Today ring shows a multiple, not a percentage.** "1.5x your usual day" instead of "150%", so every percentage on screen either comes from Anthropic or is a labelled weekly projection from an Anthropic value
+- **The heatmap measures each cell against your own usual 2-hour block** (the average of your active 2-hour blocks over the stored days, named under the grid). Up to 2.1 it was measured against the estimated 5-hour limit, which no longer exists
+- **The span instead of an estimate.** Under the rings: "Your 5h window has filled up after 51K to 316K so far (102 limit hits)". It replaces the old line "5h limit estimated at X, median of n hits" and shows how wide that range really is
+- **Dashboard and CSV exports follow the same rule.** The budget panels, the overall zone, the Limit Health card and the week bar use official values only; without them the panels show counted tokens and the time to the reset. The rows for estimated limits in both CSV exports are replaced by the official values with the time of the reading, the labelled weekly projection, the weekly limit the feed implies, and the span
+
+**Security**
+
+- **The dashboard put folder and model names into the page unescaped.** The project name in the dashboard is the last folder of the working directory a session started in. A crafted folder name, for example of a cloned repository, could have run script inside the dashboard page in your browser; a model name containing `</script>` could break the whole page. The dashboard opens as a local file in the browser, without access to your other files or to Obsidian, but such a script could have sent the dashboard figures elsewhere. All names are now escaped, the sort headers no longer carry names in inline handlers, and the embedded data can no longer close its script block. We found this in our own security check in October 2026, have no indication it was ever used, and added a test that runs the real dashboard with crafted names. The sidebar inside Obsidian was not affected: it never put names into HTML
+- **CSV exports neutralise formulas.** A text cell starting with =, +, - or @ (for example a folder name) would have been run as a formula by Excel or LibreOffice. Such cells now start with an apostrophe; plain numbers stay as they are
+- **The release workflow pins its actions to fixed commits** instead of version tags that can be moved, and no longer keeps a token in the checkout
+
+**Fixed**
+
+- **The weekly reset was an hour off after the switch to winter time.** Anthropic resets at a fixed moment in UTC. The plugin stored it as a local weekday and hour, so after the clocks changed every week boundary sat an hour off for half the year. The reset now comes from the feed or from your weekly-limit message as an exact moment, and the week steps on from there. A reset you set by hand stays in local time. The dashboard also no longer assumes Sunday 16:00 UTC for everyone, which was one account's schedule
+- **Usage credits inflated the weekly limit derived from the feed.** With usage credits, work goes on after the weekly limit. The plugin divided those extra tokens by the 100% reading, so the derived limit grew with every credit token. Readings at or above 100%, and anything after them in the same week, are no longer used; a week at 100% shows the official value without carrying it forward
+- **The CSS lint note about `:has` from the community review is gone.** We promised this fix for 2.1 in the forum and missed it twice
+- **The glossary still said cache does not count toward a limit.** That contradicted our own 2.1.0 correction, in the entry "Cost overview", in all five languages. Corrected
+- **The trend lines of the 7-day tiles on the Analytics page were flat.** The tiles read a daily figure that the 7-day series never delivered: Calls and Active Days from the start, Total and Avg per active day since 2.0. The 30-day tiles were not affected. We only noticed it on the new store screenshots for 2.5; the 2.0 screenshots already showed it
+
+**New**
+
+- **Further official windows are shown when Anthropic reports them,** for example a separate weekly limit for one model. Both feed scripts now record such windows; the plugin estimates nothing for them
+- **The poll script tries once more after a timeout.** A scheduled run right after the computer wakes from sleep often has no network yet
+- **The poll script can run only while you work.** With `--only-when-active` it asks only if Claude Code wrote to its logs in the last 20 minutes. A 5-hour window is open then anyway, so the script practically never opens one itself and can run every 30 minutes. With three fixed polls a day the 5-hour ring stayed grey most of the time; we noticed that in our own test before the release
+- **A hint under the rings when there is no feed,** with a link to the setup
+- **The help page is rebuilt and now also in Italian.** One layout for English, German, French, Spanish and Italian, the same sections in every language, a contents bar beside the text. Up to 2.1 the German and French pages lacked four sections, the Spanish page was a shorter text of its own, and all pages still named the model colours from before 2.0
+
+**Known limits**
+
+- Without the feed there are no limit percentages at all. In clients without a status line, such as Obsidian, readings come from the scheduled poll, which is a tiny real request each time and opens a 5-hour window if none is open
+- With a poll at fixed times, a few times a day, the 5-hour ring is grey most of the time: a 5-hour reading only counts inside the window it was taken in. The poll only while you work (see New) avoids that
+- In 2.1.0 we listed as open whether 1-hour and 5-minute cache writes weigh differently on the limit. It stayed unmeasurable: in every segment up to 17 October the cache writes were practically all of the 1-hour kind. Since 2.5 the plugin estimates no limits, so this question no longer affects any figure it shows
+
 ### v2.1.0 — October 2026
 
 Six things in this plugin were wrong, and two of them were claims we made ourselves in the 2.0.0 notes below. All six are corrected here. Your numbers will change after updating, mostly downward, and this is why.
@@ -472,7 +511,7 @@ Three things this plugin believed about Anthropic's rate limits were wrong. All 
 - **Activity heatmap built around your billing week** — one row per calendar day, twelve 2-hour bubbles per row, spanning your actual weekly window from reset hour to reset hour. Because that window touches eight calendar dates, the view shows eight rows, with the cells outside the window visibly inactive. Collapsible, with an Active Days panel beside it
 - **The weekly reset detects itself.** The weekly limit resets at an hour that differs per account. The plugin now calibrates that hour from your own session history instead of asking you to guess it, and says in Settings whether the value was detected or set by hand
 - **CSV export, two ways** — from the sidebar header into a configurable vault folder, or via the command palette. Three files (projects, daily detail, key figures), RFC 4180 with a UTF-8 BOM so Excel opens them correctly on the first try
-- **5-hour estimate with a usual band** — the sidebar and the dashboard show the median and the middle half of your observed hits (for example "usually between 214K and 364K"), and the CSV export carries both ends. The estimate itself is now measured inside the anchored 5-hour windows, the same way the gauge counts, so the two are directly comparable; numbers may therefore shift slightly after updating.
+- **5-hour estimate with a usual band** — the sidebar and the dashboard show the median and the middle half of your observed hits (for example "usually between 214K and 364K"), and the CSV export carries both ends. The estimate itself is now measured inside the anchored 5-hour windows, the same way the gauge counts, so the two are directly comparable; numbers may therefore shift slightly after updating. *(Removed in 2.5.0: measured against the official values, the estimate was off by 36 points on average. Percentages now come from Anthropic only.)*
 - **Calendar shows two months** instead of one, so the start of a month is no longer a nearly empty grid
 - **Spanish** — the plugin UI and the full glossary are now available in Spanish, alongside English, German, French, and Italian
 

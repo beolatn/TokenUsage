@@ -13,6 +13,12 @@
 #
 # Required repository permission: Settings → Actions → Workflow permissions
 #   → "Read and write permissions" + "Allow GitHub Actions to create attestations"
+#
+# Since 2.5 (security check 27.10.2026) every action is pinned to a full commit SHA, with the
+# version as a comment. A tag like @v2 can be moved to other code by whoever controls that
+# repository; a commit SHA cannot. The SHAs are exactly what @v4 / @v2 resolved to on
+# 27.10.2026, so the release behaves as before. To update: look up the new tag with
+# `git ls-remote --tags https://github.com/<owner>/<action>` and replace SHA and comment.
 
 name: Release
 
@@ -32,10 +38,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false   # nothing here pushes, so no token stays in .git/config
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             main.js
@@ -43,7 +51,7 @@ jobs:
             manifest.json
 
       - name: Create GitHub Release and upload assets
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             main.js

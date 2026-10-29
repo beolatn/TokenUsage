@@ -120,8 +120,9 @@ const DEFAULT_SETTINGS = {
   weeklyResetDay:    null,  // 0 = Sunday … 6 = Saturday
   weeklyResetHour:   null,  // local hour, 0–23
   weeklyResetSetAt:  null,  // ISO timestamp of the calibration, shown back to the user
-  weeklyResetSource: null,  // 'auto' = read from a weekly-limit message, 'manual' = user set it
-  weeklyResetFrom:   null,  // timestamp of the hit it was read from (auto only)
+  weeklyResetSource: null,  // 'feed' = official feed (2.5), 'auto' = weekly-limit message, 'manual' = user set it
+  weeklyResetFrom:   null,  // timestamp of the hit or feed reading it was read from (feed/auto only)
+  weeklyResetAt:     null,  // 2.5: one real reset instant in ms (feed/auto only), keeps the week UTC-exact
   // Per-day free-text notes on the activity calendar (v1.9), keyed by 'YYYY-MM-DD'. Purely
   // local, never read by anything else in the plugin — a personal annotation layer only.
   dailyComments: {},
@@ -189,15 +190,15 @@ const HELP_SECTIONS = [
     // Rewritten 09.10.2026 (Björn): the old text said cache never counts and limits come from hits
     // only. Measurements against the official percentages contradict the first, the status line
     // feed changes the second. Same rewrite in all five languages.
-    body:  'Anthropic enforces two limits and nothing else: the 5-hour window above, and a weekly cap that resets at a fixed weekday and hour. There is no daily limit, so the Today ring is not a quota (see "Today ring").\n\nInput and output tokens count. Cache is not free either: measurements against the official percentages (October 2026) indicate that cache writes clearly count and cache reads count a little. The figures in this plugin still count input and output only. When a long session has to rebuild its cache (a new 5-hour window after a pause, or a large context loaded for the first time), the official figure can therefore run ahead of the plugin. Long sessions with a large context use up the 5-hour window faster per answer than fresh, short ones.\n\nNeither limit is published in tokens. Without further setup, both estimates come from your own history, which is why the plugin can only show them once it has seen you hit a limit at least once. The weekly estimate from hits is the lowest week that ever reached the cap and can sit far too low, because cache use the plugin does not count also drives you into it. If a status line feed with the official percentages is present (~/.claude/ratelimit-log.jsonl), the plugin anchors both limits on it instead.',
+    body:  'Anthropic enforces two limits and nothing else: the 5-hour window above, and a weekly cap that resets at a fixed weekday and hour. There is no daily limit, so the Today ring is not a quota (see "Today ring").\n\nInput and output tokens count. Cache is not free either: measurements against the official percentages (October 2026) indicate that cache writes clearly count and cache reads count a little. The figures in this plugin count input and output only.\n\nSince 2.5, Token Usage shows a percentage for a limit only when it comes from Anthropic, always with the time of the reading. That needs the feed, a small file with the official percentages (~/.claude/ratelimit-log.jsonl, setup on the help page). Between two readings the week is carried forward with your counted tokens and labelled "projected". The 5-hour window is not, because how fast it fills depends mostly on how much context a session carries, and the local logs cannot tell that reliably. Without the feed you see counted tokens, the time to the reset and the span at which your 5-hour window has filled up so far.',
   },
   {
     title: 'Today ring',
-    body:  'There is no daily limit. Anthropic only limits the 5-hour window and the week. The Today ring compares what you have used today with your own average per active day, taken over every day Claude Code keeps on disk (your data retention setting). 200% means you are working twice as much as usual today, nothing more. That is why the ring stays grey: a busy day is a change in how you work, not a warning. How close you are to a limit is shown only by the rings for the 5-hour window and the week.',
+    body:  'There is no daily limit. Anthropic only limits the 5-hour window and the week. The Today ring compares what you have used today with your own average per active day, taken over every day Claude Code keeps on disk (your data retention setting), and shows it as a multiple: 2.0x means you are working twice as much as usual today, nothing more. That is why the ring stays grey: a busy day is a change in how you work, not a warning. How close you are to a limit is shown only by the rings for the 5-hour window and the week, and only with an official value.',
   },
   {
     title: 'Activity heatmap',
-    body:  'The grid on the Today page covers your current billing week. One row per calendar day, one cell per two hours, twelve cells a day.\n\nIt spans eight rows, not seven: a week running from Sunday 18:00 to Sunday 17:59 touches eight calendar dates, so the first and last rows are deliberately partial. Cells outside the window are drawn as empty outlines — that is what makes the boundary of your cycle visible.\n\nColour is pace, not volume. A 5-hour window holds two and a half 2-hour slots, so spending the whole window budget evenly means 40% of it per slot — the pace at which you arrive exactly at the wall as the window closes. Red marks that pace or faster; the bands below it are a quarter, a half and up to it. Shading within a band shows where inside it a cell sits.\n\nThree kinds of nothing are kept apart: outside the window (outline only), not yet reached (faint), and genuinely no activity (filled). Only the last one says anything about how your week went.\n\nBeside the grid, Active days counts the days of this billing week with any activity.',
+    body:  'The grid on the Today page covers your current billing week. One row per calendar day, one cell per two hours, twelve cells a day.\n\nIt spans eight rows, not seven: a week running from, say, Sunday 17:00 to the next Sunday 17:00 touches eight calendar dates, so the first and last rows are deliberately partial. Cells outside the window are drawn as empty outlines, which makes the boundary of your cycle visible.\n\nColour compares each cell with your own usual 2-hour block: the average of all 2-hour blocks with activity over the stored days (the figure is named under the grid). Low is under half of that, medium up to it, high up to twice, red more than twice. Up to 2.1 the cells were measured against an estimated 5-hour limit, which no longer exists. Shading within a band shows where inside it a cell sits.\n\nThree kinds of nothing are kept apart: outside the window (outline only), not yet reached (faint), and genuinely no activity (filled). Only the last one says anything about how your week went.\n\nBeside the grid, Active days counts the days of this billing week with any activity.',
   },
   {
     title: 'Exporting your data',
@@ -205,19 +206,19 @@ const HELP_SECTIONS = [
   },
   {
     title: 'Weekly reset',
-    body:  'The weekly limit resets at a fixed weekday and hour that differs per account. Everything week-shaped depends on it: the week ring, the forecast, the heatmap and the estimate itself.\n\nYou normally do not have to set this. When you hit a weekly limit, Claude writes the next reset time into the message, and the plugin reads it from there — Settings then shows a green check and the date of the hit it was taken from. Until that has happened at least once, it assumes Sunday 18:00 and says so.\n\nYou can set it by hand under Settings → Weekly reset. A manual setting wins: automatic detection will not overwrite it, it only confirms it. Worth re-checking after a daylight-saving change if your reset appears to have moved by an hour.',
+    body:  'The weekly limit resets at a fixed moment that differs per account. Everything week-shaped depends on it: the week ring, the forecast and the heatmap.\n\nYou normally do not have to set this. With the feed, the plugin takes the exact reset from the official reading. Without it, it reads the reset from the message Claude writes when you hit a weekly limit. Either way Settings shows a green check and where the value came from. Anthropic\'s reset is fixed in UTC, so its local clock time moves by an hour when daylight saving changes. Since 2.5 a detected reset follows that automatically. Until a reset has been detected, the plugin assumes Sunday 18:00 and says so.\n\nYou can set it by hand under Settings → Weekly reset. A manual setting wins and stays in local time: automatic detection will not overwrite it, it only confirms it.',
   },
   {
     title: 'The three time views',
     body:  'Three independent cuts through the same data — they do not nest automatically.\n\nLast 5 Hour Session — the anchored window described above. Counts toward your usage limit.\n\nThis Session — all entries with the current session ID, regardless of calendar date. A Claude Code session can span multiple days. If you started a session yesterday and are still in it today, This Session will show more tokens than Today. That is expected — the session accumulates across calendar boundaries.\n\nToday — calendar day since midnight, regardless of which session the tokens came from.\n\nThe sub-label under each title shows its exact scope at a glance. Full explanation at langeatn.de/media/token-usage/',
   },
   {
-    title: 'Rate limit estimates',
-    body:  'Anthropic doesn\'t publish the actual token limit behind a rate-limit hit — it exists server-side and stays invisible. Token Usage makes it empirically visible instead: every detected rate-limit hit becomes a data point, and enough data points become an estimate of your own session and weekly limits (shown in the dashboard\'s budget banner and in the sidebar under Right Now, where the line beneath the three rings names the estimate and how many observed hits it rests on).\n\nBeneath it you also see a usual band, the middle half of your hits. The same limit is rarely reached at exactly the same total, because other Claude use that Token Usage cannot see (such as claude.ai in the browser) draws on the same limit, so one number alone would look more precise than it is.\n\nThe estimate isn\'t static — it quietly gets more precise the longer you use Claude Code. Every new rate-limit hit refines it further, so the number you see today is more reliable than the one from your first week.',
+    title: 'Your limit hits and the span',
+    body:  'Anthropic does not publish the limits in tokens. Up to 2.1, Token Usage estimated them from your own limit hits. We put that estimate next to the official percentages for eleven days in October 2026: for the 5-hour window it was off by 36 points on average, and when a window was officially full the ring stood anywhere between 61 and 217 percent. That is why there is no estimated limit any more.\n\nWhat stays is the span: the lowest and the highest token count (input + output, from the window start up to the hit) at which your 5-hour window has filled up so far. It shows how wide the range really is. With the feed the window start comes from Anthropic. Without it, it is rebuilt from your logs and can be a few minutes off if claude.ai or another device opened the window.',
   },
   {
     title: 'The sidebar',
-    body:  'An icon rail on the left switches between four pages.\n\nToday — three rings (5h window, today, this week), the activity heatmap for the current billing week, your last action, and the token breakdown. Everything here is from today or the current week; anything covering a longer span lives elsewhere by design.\n\nCalendar — the last two months as month grids.\n\nAnalytics — the 7-day and N-day summaries as colored KPI tiles with trend sparklines, plus the model distribution.\n\nSettings — the same settings as the Obsidian settings tab, without leaving the sidebar.\n\nIn the header: Dashboard and Report generate files, CSV exports into your vault, and the arrow forces an immediate refresh.\n\nEach of Today\'s four token rows carries a compact verdict marker — a green dot when close to your own recent average, an amber arrow when running noticeably higher. The comparison window follows your Claude data retention setting, not a fixed number of days.',
+    body:  'An icon rail on the left switches between four pages.\n\nToday — three rings (5h window, today, this week), the activity heatmap for the current billing week, your last action, and the token breakdown. The rings for the 5-hour window and the week carry a percentage only when it comes from Anthropic, with the time of the reading. Without one they stay grey and show counted tokens and the time to the reset. The Today ring shows a multiple of your usual day. Everything here is from today or the current week; anything covering a longer span lives elsewhere by design.\n\nCalendar — the last two months as month grids.\n\nAnalytics — the 7-day and N-day summaries as colored KPI tiles with trend sparklines, plus the model distribution.\n\nSettings — the same settings as the Obsidian settings tab, without leaving the sidebar.\n\nIn the header: Dashboard and Report generate files, CSV exports into your vault, and the arrow forces an immediate refresh.\n\nEach of Today\'s four token rows carries a compact verdict marker — a green dot when close to your own recent average, an amber arrow when running noticeably higher. The comparison window follows your Claude data retention setting, not a fixed number of days.',
   },
   {
     title: 'Activity calendar',
@@ -241,7 +242,7 @@ const HELP_SECTIONS = [
   },
   {
     title: 'What is measured',
-    body:  'This plugin reads what Claude Code writes to disk, so it covers every way you run Claude Code: in a terminal, inside Obsidian, in an editor like VS Code, and the agent mode built into the Claude desktop app. All of it lands in the same numbers.\n\nWhat it cannot show is ordinary chat — the conversations you have in the Claude desktop app or on claude.ai. Those never write token counts to your machine; the only usage signal available there is a rounded percentage of your current limit, not the actual token counts this plugin is built on.\n\nSo if a day feels busier than the figures suggest, that is usually the reason: your chat usage counts against the same plan limit, but leaves no local trace to measure. Worth keeping in mind for the rate limit estimates in particular, which can only be derived from the portion that is visible here.',
+    body:  'This plugin reads what Claude Code writes to disk, so it covers every way you run Claude Code: in a terminal, inside Obsidian, in an editor like VS Code, and the agent mode built into the Claude desktop app. All of it lands in the same numbers.\n\nWhat it cannot show is ordinary chat — the conversations you have in the Claude desktop app or on claude.ai. Those never write token counts to your machine; the only usage signal available there is a rounded percentage of your current limit, not the actual token counts this plugin is built on.\n\nSo if a day feels busier than the figures suggest, that is usually the reason: your chat usage counts against the same plan limit, but leaves no local trace to measure. It is also one reason why the span of your limit hits is wide, and why only the official percentages say where you really stand.',
   },
   {
     title: 'Archive & long-term data',
@@ -249,7 +250,7 @@ const HELP_SECTIONS = [
   },
   {
     title: 'Cost overview (approximate, USD)',
-    body:  'Input:        ~$3 / 1M tokens (Sonnet)\nOutput:       ~$15 / 1M tokens\nCache Write:  ~$3.75 / 1M tokens (+25%)\nCache Read:   ~$0.30 / 1M tokens (−90%)\n\nActual pricing depends on your plan and model. These figures illustrate why a high Reuse Factor reduces costs significantly.\n\nNote that cost and limits are two different things. Cache tokens cost money but do not move you toward the 5-hour or weekly limit — see "What counts toward a limit".',
+    body:  'Input:        ~$3 / 1M tokens (Sonnet)\nOutput:       ~$15 / 1M tokens\nCache Write:  ~$3.75 / 1M tokens (+25%)\nCache Read:   ~$0.30 / 1M tokens (−90%)\n\nActual pricing depends on your plan and model. These figures illustrate why a high Reuse Factor reduces costs significantly.\n\nCost and limits are two different things, but cache is part of both: cache writes clearly count toward the limits and cache reads a little (see "What counts toward a limit"). An earlier version of this text said cache does not count at all. That was wrong and is corrected in 2.5.',
   },
 ];
 
@@ -284,7 +285,7 @@ const STRINGS = {
     helpLink:         '↗ Full documentation on langeatn.de',
     heatmapTitle:     'Activity Heatmap',
     heatmapCycle:     (range) => `Your billing week · ${range}`,
-    timelineSub:      'One cell = 2 hours. Red is the pace that would empty a 5-hour window exactly as it closes.',
+    timelineSub:      (v) => `One cell = 2 hours, measured against your usual 2-hour block (${v}, average of your active blocks). Red is more than twice that.`,
     heatLegendVhigh:  'Very high',
     heatLegendHigh:   'High',
     heatLegendMedium: 'Medium',
@@ -351,6 +352,7 @@ const STRINGS = {
     settingReset:     'Weekly reset',
     settingResetDesc: 'One-off setup: run /usage in Claude Code, read when your weekly limit resets, and set it here. Anthropic assigns this per account — it is not the same for everyone. Until you do, the plugin assumes Sunday 18:00 and every week-based figure may be off.',
     settingResetAuto: (d) => `Detected automatically from your weekly-limit hit on ${d} — no setup needed. Change it below only if it looks wrong.`,
+    settingResetFeed: (d) => `Taken from the official feed (reading of ${d}), exact to the minute and correct across daylight-saving changes — no setup needed. A value you set below replaces it only until it matches the feed again.`,
     settingResetDone: (d) => `Set manually on ${d}. Update it if your reset ever moves (for example after a daylight-saving change).`,
     calSun: 'Sunday', calMon: 'Monday', calTue: 'Tuesday', calWed: 'Wednesday',
     calThu: 'Thursday', calFri: 'Friday', calSat: 'Saturday',
@@ -374,16 +376,33 @@ const STRINGS = {
     calNoteEdit:      'Click to edit note',
     limitPulseTitle:    'Right Now',
     limitPulse5h:       '5h Window',
-    limitPulseOf5h:     (p) => `${p}% of est. 5h limit`,
-    limitPulseBasis:    (n) => `5h limit estimated at {v} — median of ${n} observed limit hits in your own data.`,
-    limitPulseBand:      (lo, hi) => `Usually between ${lo} and ${hi} (middle half of hits).`,
-    limitPulseBasisFeed: `5h limit {v}, derived from the official percentage in your status line feed.`,
-    limitPulseWeekFeed:  `Weekly limit {v}, derived from the official percentage in your status line feed.`,
     limitPulseToday:    'Today',
     limitPulseWeek:     'This Week',
-    limitPulseOfDaily:  (p) => `${p}% of your usual day`,
-    limitPulseOfWeekly: (p) => `${p}% of est. weekly limit`,
-    limitPulseNoWeekly: 'Weekly limit not yet estimated — needs one observed weekly-limit hit.',
+    pulseRead:          (tm) => `as of ${tm}`,
+    pulseSince:         (v) => `+${v} since`,
+    pulseProjected:     'projected',
+    pulseOfficialAt:    (p, tm) => `official ${p}% at ${tm}`,
+    pulseSinceReset:    'projected since reset',
+    pulseResetIn:       (v) => `resets in ${v}`,
+    pulseNoReading5h:   'no reading in this window yet',
+    pulseNoReadingWk:   'no reading this week yet',
+    pulseNoFeed:        'no official value',
+    pulseReached:       'limit reached',
+    pulseUsual:         (x) => `${x}x your usual day`,
+    pulseSpan:          (lo, hi, n) => `Your 5h window has filled up after ${lo} to ${hi} so far (${n} limit hits).`,
+    pulseSpanOne:       (v) => `Your 5h window has filled up once so far, after ${v}.`,
+    pulseSpanTipFeed:   'Counted input + output from the window start Anthropic reported up to each limit hit. How fast a window fills depends mostly on how much context a session carries.',
+    pulseSpanTipLogs:   'Counted input + output from the window start rebuilt from your logs up to each limit hit. If claude.ai or another device opened the window, the start can be a few minutes off.',
+    pulseFeedHint:      'Official percentages need the feed.',
+    pulseFeedLink:      'How to set it up',
+    pulseTip5h:         (p, tm, v) => `Official ${p}% at ${tm}. Within a window it can only rise, so it is a lower bound. Counted since: ${v}.`,
+    pulseTipWkProjected: (p, tm, v, lim) => `Official ${p}% at ${tm}, carried forward with ${v} counted since, against the weekly limit the feed implies (~${lim}).`,
+    pulseTipWkSinceReset: (lim) => `No reading since the weekly reset yet. Carried forward from 0% with last week's limit (~${lim}).`,
+    pulseTipWkOfficial: (p, tm) => `Official ${p}% at ${tm}.`,
+    pulseTipNoFeed:     'Counted tokens only. Token Usage shows a percentage for a limit only when it comes from Anthropic, via the feed.',
+    pulseTipToday:      'Your usual day is your average per active day. Anthropic has no daily limit.',
+    pulseMoreWeekly:    (n, p, tm) => `${n} weekly limit: ${p}% (official, as of ${tm})`,
+    pulseMore:          (n, p, tm) => `${n}: ${p}% (official, as of ${tm})`,
     helpSections:     HELP_SECTIONS,
   },
   de: {
@@ -407,7 +426,7 @@ const STRINGS = {
     helpLink:         '↗ Vollständige Dokumentation auf langeatn.de',
     heatmapTitle:     'Aktivitäts-Heatmap',
     heatmapCycle:     (range) => `Dein Abrechnungszyklus · ${range}`,
-    timelineSub:      'Eine Zelle = 2 Stunden. Rot ist das Tempo, das ein 5-Stunden-Fenster genau zum Ablauf leer macht.',
+    timelineSub:      (v) => `Eine Zelle = 2 Stunden, gemessen an deinem üblichen 2-Stunden-Block (${v}, Schnitt deiner aktiven Blöcke). Rot ist mehr als das Doppelte.`,
     heatLegendVhigh:  'Sehr hoch',
     heatLegendHigh:   'Hoch',
     heatLegendMedium: 'Mittel',
@@ -474,6 +493,7 @@ const STRINGS = {
     settingReset:     'Wöchentlicher Reset',
     settingResetDesc: 'Einmalige Einrichtung: Führe /usage in Claude Code aus, lies ab, wann dein Wochenlimit zurückgesetzt wird, und trag es hier ein. Anthropic legt das pro Konto fest — es ist nicht für alle gleich. Bis dahin nimmt das Plugin Sonntag 18:00 an, und jede wochenbezogene Zahl kann daneben liegen.',
     settingResetAuto: (d) => `Automatisch erkannt aus deinem Wochenlimit-Treffer vom ${d} — keine Einrichtung nötig. Nur ändern, falls es falsch aussieht.`,
+    settingResetFeed: (d) => `Aus dem offiziellen Feed übernommen (Ablesung vom ${d}), minutengenau und auch nach einer Zeitumstellung richtig — keine Einrichtung nötig. Ein Wert, den du unten setzt, gilt, bis er wieder zum Feed passt.`,
     settingResetDone: (d) => `Am ${d} manuell gesetzt. Anpassen, falls sich dein Reset verschiebt (etwa nach einer Zeitumstellung).`,
     calSun: 'Sonntag', calMon: 'Montag', calTue: 'Dienstag', calWed: 'Mittwoch',
     calThu: 'Donnerstag', calFri: 'Freitag', calSat: 'Samstag',
@@ -497,16 +517,33 @@ const STRINGS = {
     calNoteEdit:      'Klicken, um die Notiz zu bearbeiten',
     limitPulseTitle:    'Aktueller Stand',
     limitPulse5h:       '5h-Fenster',
-    limitPulseOf5h:     (p) => `${p}% des geschätzten 5h-Limits`,
-    limitPulseBasis:    (n) => `5h-Limit geschätzt auf {v} — Median aus ${n} beobachteten Limit-Treffern in deinen eigenen Daten.`,
-    limitPulseBand:      (lo, hi) => `Meist zwischen ${lo} und ${hi} (mittlere Hälfte der Treffer).`,
-    limitPulseBasisFeed: `5h-Limit {v}, abgeleitet aus dem offiziellen Prozentwert in deinem Statusline-Feed.`,
-    limitPulseWeekFeed:  `Wochenlimit {v}, abgeleitet aus dem offiziellen Prozentwert in deinem Statusline-Feed.`,
     limitPulseToday:    'Heute',
     limitPulseWeek:     'Diese Woche',
-    limitPulseOfDaily:  (p) => `${p}% deines üblichen Tages`,
-    limitPulseOfWeekly: (p) => `${p}% des geschätzten Wochenlimits`,
-    limitPulseNoWeekly: 'Wochenlimit noch nicht geschätzt — braucht mindestens einen beobachteten Weekly-Limit-Hit.',
+    pulseRead:          (tm) => `Stand ${tm}`,
+    pulseSince:         (v) => `+${v} seitdem`,
+    pulseProjected:     'hochgerechnet',
+    pulseOfficialAt:    (p, tm) => `offiziell ${p}% um ${tm}`,
+    pulseSinceReset:    'hochgerechnet seit Reset',
+    pulseResetIn:       (v) => `Reset in ${v}`,
+    pulseNoReading5h:   'noch keine Ablesung in diesem Fenster',
+    pulseNoReadingWk:   'noch keine Ablesung diese Woche',
+    pulseNoFeed:        'kein offizieller Wert',
+    pulseReached:       'Limit erreicht',
+    pulseUsual:         (x) => `${x}x dein üblicher Tag`,
+    pulseSpan:          (lo, hi, n) => `Bei dir war das 5h-Fenster bisher nach ${lo} bis ${hi} voll (${n} Limit-Treffer).`,
+    pulseSpanOne:       (v) => `Bei dir war das 5h-Fenster bisher einmal voll, nach ${v}.`,
+    pulseSpanTipFeed:   'Gezählt Input + Output vom Fensterstart laut Anthropic bis zum jeweiligen Limit-Treffer. Wie schnell ein Fenster voll ist, hängt vor allem davon ab, wie viel Kontext eine Sitzung mitschleppt.',
+    pulseSpanTipLogs:   'Gezählt Input + Output vom Fensterstart, rekonstruiert aus deinen Logs, bis zum jeweiligen Limit-Treffer. Hat claude.ai oder ein anderes Gerät das Fenster geöffnet, kann der Start einige Minuten abweichen.',
+    pulseFeedHint:      'Offizielle Prozente gibt es mit dem Feed.',
+    pulseFeedLink:      'So richtest du ihn ein',
+    pulseTip5h:         (p, tm, v) => `Offiziell ${p}% um ${tm}. Im Fenster kann der Wert nur steigen, er ist also eine Untergrenze. Seitdem gezählt: ${v}.`,
+    pulseTipWkProjected: (p, tm, v, lim) => `Offiziell ${p}% um ${tm}, weitergerechnet mit ${v}, die seitdem gezählt wurden, gegen das Wochenlimit, das der Feed ergibt (~${lim}).`,
+    pulseTipWkSinceReset: (lim) => `Seit dem Wochen-Reset noch keine Ablesung. Ab 0% hochgerechnet mit dem Limit der Vorwoche (~${lim}).`,
+    pulseTipWkOfficial: (p, tm) => `Offiziell ${p}% um ${tm}.`,
+    pulseTipNoFeed:     'Nur gezählte Tokens. Token Usage zeigt einen Prozentwert für ein Limit nur, wenn er von Anthropic kommt, über den Feed.',
+    pulseTipToday:      'Dein üblicher Tag ist dein Schnitt pro aktivem Tag. Ein Tageslimit gibt es bei Anthropic nicht.',
+    pulseMoreWeekly:    (n, p, tm) => `${n}-Wochenlimit: ${p}% (offiziell, Stand ${tm})`,
+    pulseMore:          (n, p, tm) => `${n}: ${p}% (offiziell, Stand ${tm})`,
     helpSections: [
       {
         title: 'Token',
@@ -534,15 +571,15 @@ const STRINGS = {
       },
       {
         title: 'Was auf ein Limit einzahlt',
-        body:  'Anthropic setzt zwei Limits durch und sonst keins: das 5-Stunden-Fenster oben und ein Wochenlimit, das an einem festen Wochentag zu einer festen Uhrzeit zurückgesetzt wird. Ein Tageslimit gibt es nicht, der Heute-Ring ist deshalb kein Kontingent (siehe "Der Heute-Ring").\n\nInput- und Output-Tokens zählen. Cache ist aber nicht umsonst: Messungen gegen die offiziellen Prozentwerte (Oktober 2026) deuten darauf hin, dass Cache Writes deutlich mitzählen und Cache Reads ein wenig. Die Zahlen im Plugin zählen weiterhin nur Input und Output. Muss eine lange Session ihren Cache neu aufbauen (neues 5-Stunden-Fenster nach einer Pause, großer Kontext zum ersten Mal geladen), kann der offizielle Wert dem Plugin deshalb vorauslaufen. Lange Sessions mit großem Kontext verbrauchen das 5-Stunden-Fenster pro Antwort schneller als frische, kurze.\n\nKeines der beiden Limits ist in Tokens veröffentlicht. Ohne weitere Einrichtung stammen beide Schätzungen aus deiner eigenen Historie, deshalb kann das Plugin sie erst zeigen, wenn es dich mindestens einmal in ein Limit laufen gesehen hat. Die Wochenschätzung aus Treffern ist die niedrigste Woche, die je ans Limit kam, und kann deutlich zu niedrig liegen, weil auch Cache, den das Plugin nicht zählt, dich ans Limit bringt. Liegt ein Statusline-Feed mit den offiziellen Prozentwerten vor (~/.claude/ratelimit-log.jsonl), verankert das Plugin beide Limits stattdessen daran.',
+        body:  'Anthropic setzt zwei Limits durch und sonst keins: das 5-Stunden-Fenster oben und ein Wochenlimit, das an einem festen Wochentag zu einer festen Uhrzeit zurückgesetzt wird. Ein Tageslimit gibt es nicht, der Heute-Ring ist deshalb kein Kontingent (siehe "Der Heute-Ring").\n\nInput- und Output-Tokens zählen. Cache ist aber nicht umsonst: Messungen gegen die offiziellen Prozentwerte (Oktober 2026) deuten darauf hin, dass Cache Writes deutlich mitzählen und Cache Reads ein wenig. Die Zahlen im Plugin zählen nur Input und Output.\n\nSeit 2.5 zeigt Token Usage einen Prozentwert für ein Limit nur, wenn er von Anthropic kommt, immer mit der Uhrzeit der Ablesung. Dafür brauchst du den Feed, eine kleine Datei mit den offiziellen Prozentwerten (~/.claude/ratelimit-log.jsonl, Anleitung in der Hilfe). Zwischen zwei Ablesungen wird die Woche mit deinen gezählten Tokens weitergerechnet und als "hochgerechnet" gekennzeichnet. Das 5-Stunden-Fenster nicht: Wie schnell es voll ist, hängt vor allem davon ab, wie viel Kontext eine Sitzung mitschleppt, und das lässt sich aus den lokalen Logs nicht verlässlich ablesen. Ohne Feed siehst du gezählte Tokens, die Zeit bis zum Reset und die Spanne, in der dein 5-Stunden-Fenster bisher voll war.',
       },
       {
         title: 'Der Heute-Ring',
-        body:  'Für den Tag gibt es kein Limit. Anthropic begrenzt nur das 5-Stunden-Fenster und die Woche. Der Heute-Ring vergleicht deinen heutigen Verbrauch mit deinem eigenen Schnitt pro aktivem Tag, gerechnet über alle Tage, die Claude Code aufbewahrt (deine Einstellung zur Datenaufbewahrung). 200 % heißt, dass du heute doppelt so viel arbeitest wie sonst, mehr nicht. Deshalb bleibt der Ring grau: Ein voller Tag ist eine geänderte Arbeitsweise, keine Warnung. Wie nah du an einem Limit bist, zeigen nur die Ringe für das 5-Stunden-Fenster und die Woche.',
+        body:  'Für den Tag gibt es kein Limit. Anthropic begrenzt nur das 5-Stunden-Fenster und die Woche. Der Heute-Ring vergleicht deinen heutigen Verbrauch mit deinem eigenen Schnitt pro aktivem Tag, gerechnet über alle Tage, die Claude Code aufbewahrt (deine Einstellung zur Datenaufbewahrung), und zeigt ihn als Vielfaches: 2,0x heißt, dass du heute doppelt so viel arbeitest wie sonst, mehr nicht. Deshalb bleibt der Ring grau: Ein voller Tag ist eine geänderte Arbeitsweise, keine Warnung. Wie nah du an einem Limit bist, zeigen nur die Ringe für das 5-Stunden-Fenster und die Woche, und nur mit offiziellem Wert.',
       },
       {
         title: 'Aktivitäts-Heatmap',
-        body:  'Das Raster auf der Today-Seite zeigt deine laufende Abrechnungswoche. Eine Zeile je Kalendertag, eine Zelle je zwei Stunden, zwölf Zellen pro Tag.\n\nEs hat acht Zeilen, nicht sieben: Eine Woche von Sonntag 18:00 bis Sonntag 17:59 berührt acht Kalendertage, die erste und die letzte Zeile sind deshalb bewusst Teiltage. Zellen außerhalb des Fensters sind nur als leere Rahmen gezeichnet — genau das macht die Grenze deines Zyklus sichtbar.\n\nDie Farbe zeigt das Tempo, nicht die Menge. Ein 5-Stunden-Fenster fasst zweieinhalb 2-Stunden-Abschnitte; das Budget gleichmäßig verbraucht sind also 40 % davon je Abschnitt — das Tempo, bei dem du exakt mit Ablauf des Fensters an die Wand kommst. Rot markiert dieses Tempo oder schneller, die Stufen darunter sind ein Viertel, die Hälfte und bis dahin. Die Tonabstufung innerhalb einer Stufe zeigt, wo darin ein Wert sitzt.\n\nDrei Arten von Nichts bleiben getrennt: außerhalb des Fensters (nur Rahmen), noch nicht erreicht (blass) und wirklich keine Aktivität (gefüllt). Nur das Letzte sagt etwas darüber aus, wie deine Woche lief.\n\nNeben dem Raster zählt "Aktive Tage" die Tage dieser Abrechnungswoche mit Aktivität.',
+        body:  'Das Raster auf der Today-Seite zeigt deine laufende Abrechnungswoche. Eine Zeile je Kalendertag, eine Zelle je zwei Stunden, zwölf Zellen pro Tag.\n\nEs hat acht Zeilen, nicht sieben: Eine Woche von zum Beispiel Sonntag 17:00 bis zum nächsten Sonntag 17:00 berührt acht Kalendertage, die erste und die letzte Zeile sind deshalb bewusst Teiltage. Zellen außerhalb des Fensters sind nur als leere Rahmen gezeichnet, das macht die Grenze deines Zyklus sichtbar.\n\nDie Farbe vergleicht jede Zelle mit deinem eigenen üblichen 2-Stunden-Block: dem Schnitt aller 2-Stunden-Blöcke mit Aktivität über die gespeicherten Tage (der Wert steht unter dem Raster). Niedrig ist unter der Hälfte davon, mittel bis dahin, hoch bis zum Doppelten, rot mehr als das Doppelte. Bis 2.1 wurden die Zellen an einem geschätzten 5-Stunden-Limit gemessen, das es nicht mehr gibt. Die Tonabstufung innerhalb einer Stufe zeigt, wo darin ein Wert sitzt.\n\nDrei Arten von Nichts bleiben getrennt: außerhalb des Fensters (nur Rahmen), noch nicht erreicht (blass) und wirklich keine Aktivität (gefüllt). Nur das Letzte sagt etwas darüber aus, wie deine Woche lief.\n\nNeben dem Raster zählt "Aktive Tage" die Tage dieser Abrechnungswoche mit Aktivität.',
       },
       {
         title: 'Daten exportieren',
@@ -550,19 +587,19 @@ const STRINGS = {
       },
       {
         title: 'Wöchentlicher Reset',
-        body:  'Das Wochenlimit wird an einem festen Wochentag zu einer festen Uhrzeit zurückgesetzt, und zwar je Konto unterschiedlich. Alles Wochenbezogene hängt daran: der Wochen-Ring, die Prognose, die Heatmap und die Schätzung selbst.\n\nNormalerweise musst du hier nichts einstellen. Wenn du in ein Wochenlimit läufst, schreibt Claude den nächsten Reset-Zeitpunkt in die Meldung, und das Plugin liest ihn von dort — die Einstellungen zeigen dann einen grünen Haken und das Datum des Treffers, aus dem der Wert stammt. Solange das noch nie passiert ist, nimmt es Sonntag 18:00 an und sagt das auch.\n\nVon Hand geht es unter Settings → Wöchentlicher Reset. Eine manuelle Einstellung gewinnt: Die automatische Erkennung überschreibt sie nicht, sie bestätigt sie nur. Nach einer Zeitumstellung lohnt ein Blick, falls dein Reset um eine Stunde verschoben wirkt.',
+        body:  'Das Wochenlimit wird zu einem festen Zeitpunkt zurückgesetzt, je Konto unterschiedlich. Alles Wochenbezogene hängt daran: der Wochen-Ring, die Prognose und die Heatmap.\n\nNormalerweise musst du hier nichts einstellen. Mit Feed übernimmt das Plugin den genauen Reset aus der offiziellen Ablesung. Ohne Feed liest es ihn aus der Meldung, die Claude bei einem Wochenlimit-Treffer schreibt. In beiden Fällen zeigen die Einstellungen einen grünen Haken und woher der Wert stammt. Der Reset von Anthropic liegt fest in UTC, seine Ortszeit verschiebt sich deshalb bei der Zeitumstellung um eine Stunde. Seit 2.5 folgt ein erkannter Reset dem automatisch. Solange noch kein Reset erkannt wurde, nimmt das Plugin Sonntag 18:00 an und sagt das auch.\n\nVon Hand geht es unter Settings → Wöchentlicher Reset. Eine manuelle Einstellung gewinnt und bleibt in Ortszeit: Die automatische Erkennung überschreibt sie nicht, sie bestätigt sie nur.',
       },
       {
         title: 'Die drei unterschiedlichen Zeitansichten in der Übersicht',
         body:  'Es gibt drei unabhängige Ausschnitte aus denselben Daten — sie sind nicht automatisch ineinander verschachtelt.\n\nDie Letzte 5-Stunden-Session — das verankerte Fenster von oben. Zählt zu deinem Nutzungslimit.\n\nDiese Session — alle Einträge mit der aktuellen Session-ID, unabhängig vom Kalenderdatum. Eine Claude Code Session kann mehrere Tage umfassen. Wenn du eine Session gestern begonnen hast und heute noch darin weiterarbeitest, zeigt "Diese Session" mehr Tokens als "Heute". Das ist so gewollt und designt — die Session akkumuliert über Kalendergrenzen hinweg.\n\nHeute — Kalendertag seit Mitternacht, unabhängig davon, aus welcher Session die Token stammen.\n\nDie Beschreibung unter jedem Titel zeigt den genauen Geltungsbereich auf einen Blick. Du findest eine vollständige Erklärung auf langeatn.de/media/token-usage/',
       },
       {
-        title: 'Empirische Limit-Schätzung',
-        body:  'Anthropic veröffentlicht das tatsächliche Token-Limit hinter einem Rate-Limit-Hit nicht — es existiert serverseitig und bleibt unsichtbar. Token Usage macht es stattdessen empirisch sichtbar: jeder erkannte Rate-Limit-Hit wird zu einem Datenpunkt, und genug Datenpunkte ergeben eine Schätzung deines eigenen Session- und Wochenlimits (zu sehen im Budget-Banner des Dashboards und in der Seitenleiste unter "Aktueller Stand", wo die Zeile unter den drei Ringen die Schätzung nennt und auf wie vielen beobachteten Treffern sie beruht).\n\nDarunter siehst du außerdem ein übliches Band, die mittlere Hälfte deiner Treffer. Dasselbe Limit wird selten bei exakt derselben Summe erreicht, weil auch anderes Claude-Nutzen, das Token Usage nicht sehen kann (etwa claude.ai im Browser), am selben Limit zehrt. Eine einzelne Zahl würde genauer wirken, als sie ist.\n\nDie Schätzung ist nicht statisch — sie wird mit der Zeit ganz automatisch präziser, je länger du Claude Code nutzt. Jeder neue Rate-Limit-Hit verfeinert sie weiter, sodass die Zahl, die du heute siehst, verlässlicher ist als die aus deiner ersten Woche.',
+        title: 'Deine Limit-Treffer und die Spanne',
+        body:  'Anthropic veröffentlicht die Limits nicht in Tokens. Bis 2.1 hat Token Usage sie aus deinen eigenen Limit-Treffern geschätzt. Wir haben diese Schätzung im Oktober 2026 elf Tage lang gegen die offiziellen Prozentwerte gelegt: Beim 5-Stunden-Fenster lag sie im Schnitt 36 Punkte daneben, und in dem Moment, in dem ein Fenster offiziell voll war, stand der Ring irgendwo zwischen 61 und 217 Prozent. Deshalb gibt es kein geschätztes Limit mehr.\n\nGeblieben ist die Spanne: die niedrigste und die höchste Tokenzahl (Input + Output, vom Fensterstart bis zum Treffer), bei der dein 5-Stunden-Fenster bisher voll war. Sie zeigt, wie breit der Bereich wirklich ist. Mit Feed kommt der Fensterstart von Anthropic. Ohne Feed wird er aus deinen Logs rekonstruiert und kann um einige Minuten abweichen, wenn claude.ai oder ein anderes Gerät das Fenster geöffnet hat.',
       },
       {
         title: 'Die Seitenleiste',
-        body:  'Eine Icon-Leiste links wechselt zwischen vier Seiten.\n\nToday — drei Ringe (5h-Fenster, Heute, diese Woche), die Aktivitäts-Heatmap der laufenden Abrechnungswoche, deine letzte Aktion und die Token-Aufschlüsselung. Alles hier stammt von heute oder aus der laufenden Woche; alles mit längerem Zeitraum liegt bewusst woanders.\n\nKalender — die letzten zwei Monate als Monatsraster.\n\nAnalytics — die 7-Tage- und N-Tage-Zusammenfassungen als farbige KPI-Kacheln mit Trend-Sparklines, dazu die Modellverteilung.\n\nSettings — dieselben Einstellungen wie im Obsidian-Einstellungstab, ohne die Seitenleiste zu verlassen.\n\nIm Kopfbereich: Dashboard und Report erzeugen Dateien, CSV exportiert in deinen Vault, der Pfeil aktualisiert sofort.\n\nJede der vier Token-Zeilen im Heute-Bereich trägt eine kompakte Verdict-Markierung — ein grüner Punkt, wenn der Wert nahe an deinem eigenen aktuellen Durchschnitt liegt, ein gelber Pfeil, wenn er deutlich darüber liegt. Das Vergleichsfenster richtet sich nach deiner eingestellten Claude-Datenaufbewahrung, nicht nach einer festen Anzahl Tage.',
+        body:  'Eine Icon-Leiste links wechselt zwischen vier Seiten.\n\nToday — drei Ringe (5h-Fenster, Heute, diese Woche), die Aktivitäts-Heatmap der laufenden Abrechnungswoche, deine letzte Aktion und die Token-Aufschlüsselung. Die Ringe für das 5-Stunden-Fenster und die Woche tragen einen Prozentwert nur, wenn er von Anthropic kommt, mit der Uhrzeit der Ablesung. Ohne bleiben sie grau und zeigen gezählte Tokens und die Zeit bis zum Reset. Der Heute-Ring zeigt ein Vielfaches deines üblichen Tages. Alles hier stammt von heute oder aus der laufenden Woche; alles mit längerem Zeitraum liegt bewusst woanders.\n\nKalender — die letzten zwei Monate als Monatsraster.\n\nAnalytics — die 7-Tage- und N-Tage-Zusammenfassungen als farbige KPI-Kacheln mit Trend-Sparklines, dazu die Modellverteilung.\n\nSettings — dieselben Einstellungen wie im Obsidian-Einstellungstab, ohne die Seitenleiste zu verlassen.\n\nIm Kopfbereich: Dashboard und Report erzeugen Dateien, CSV exportiert in deinen Vault, der Pfeil aktualisiert sofort.\n\nJede der vier Token-Zeilen im Heute-Bereich trägt eine kompakte Verdict-Markierung — ein grüner Punkt, wenn der Wert nahe an deinem eigenen aktuellen Durchschnitt liegt, ein gelber Pfeil, wenn er deutlich darüber liegt. Das Vergleichsfenster richtet sich nach deiner eingestellten Claude-Datenaufbewahrung, nicht nach einer festen Anzahl Tage.',
       },
       {
         title: 'Aktivitätskalender',
@@ -586,7 +623,7 @@ const STRINGS = {
       },
       {
         title: 'Was gemessen wird',
-        body:  'Dieses Plugin liest, was Claude Code auf die Festplatte schreibt. Damit ist jede Art erfasst, wie du Claude Code nutzt: im Terminal, in Obsidian, in einem Editor wie VS Code sowie im Agent-Modus der Claude-Desktop-App. All das fließt in dieselben Zahlen ein.\n\nNicht zeigen kann es den normalen Chat — also die Gespräche in der Claude-Desktop-App oder auf claude.ai. Dort werden keine Token-Werte auf deinem Rechner gespeichert; verfügbar ist dort nur ein gerundeter Prozentwert deiner aktuellen Auslastung, nicht die tatsächlichen Token-Zahlen, auf denen dieses Plugin aufbaut.\n\nWenn ein Tag also voller wirkt als die Zahlen vermuten lassen, ist das meist der Grund: Dein Chat-Verbrauch zählt auf dasselbe Limit, hinterlässt lokal aber keine messbare Spur. Besonders bei den Rate-Limit-Schätzungen im Hinterkopf behalten, denn die lassen sich nur aus dem hier sichtbaren Teil ableiten.',
+        body:  'Dieses Plugin liest, was Claude Code auf die Festplatte schreibt. Damit ist jede Art erfasst, wie du Claude Code nutzt: im Terminal, in Obsidian, in einem Editor wie VS Code sowie im Agent-Modus der Claude-Desktop-App. All das fließt in dieselben Zahlen ein.\n\nNicht zeigen kann es den normalen Chat — also die Gespräche in der Claude-Desktop-App oder auf claude.ai. Dort werden keine Token-Werte auf deinem Rechner gespeichert; verfügbar ist dort nur ein gerundeter Prozentwert deiner aktuellen Auslastung, nicht die tatsächlichen Token-Zahlen, auf denen dieses Plugin aufbaut.\n\nWenn ein Tag also voller wirkt als die Zahlen vermuten lassen, ist das meist der Grund: Dein Chat-Verbrauch zählt auf dasselbe Limit, hinterlässt lokal aber keine messbare Spur. Das ist auch ein Grund, warum die Spanne deiner Limit-Treffer so breit ist und warum nur die offiziellen Prozentwerte sagen, wo du wirklich stehst.',
       },
       {
         title: 'Archiv & Langzeit-Daten',
@@ -594,7 +631,7 @@ const STRINGS = {
       },
       {
         title: 'Kostenübersicht (ungefähr, USD)',
-        body:  'Input:        ~3 $ / 1M Token (Sonnet)\nOutput:       ~15 $ / 1M Token\nCache Write:  ~3,75 $ / 1M Token (+25 %)\nCache Read:   ~0,30 $ / 1M Token (−90 %)\n\nDie tatsächlichen Preise hängen von deinem Plan und Modell ab. Diese Werte verdeutlichen, warum ein hoher Wiederverwendungsfaktor die Kosten erheblich senkt.\n\nKosten und Limits sind zweierlei: Cache-Tokens kosten Geld, bringen dich aber dem 5-Stunden- oder Wochenlimit nicht näher — siehe "Was auf ein Limit einzahlt".',
+        body:  'Input:        ~3 $ / 1M Token (Sonnet)\nOutput:       ~15 $ / 1M Token\nCache Write:  ~3,75 $ / 1M Token (+25 %)\nCache Read:   ~0,30 $ / 1M Token (−90 %)\n\nDie tatsächlichen Preise hängen von deinem Plan und Modell ab. Diese Werte verdeutlichen, warum ein hoher Wiederverwendungsfaktor die Kosten erheblich senkt.\n\nKosten und Limits sind zweierlei, aber Cache gehört zu beidem: Cache Writes zählen deutlich auf die Limits und Cache Reads ein wenig (siehe "Was auf ein Limit einzahlt"). Eine frühere Fassung dieses Textes sagte, Cache zähle gar nicht. Das war falsch und ist in 2.5 korrigiert.',
       },
     ],
   },
@@ -619,7 +656,7 @@ const STRINGS = {
     helpLink:         '↗ Documentation complète sur langeatn.de',
     heatmapTitle:     "Carte d'activité",
     heatmapCycle:     (range) => `Votre cycle de facturation · ${range}`,
-    timelineSub:      'Une case = 2 heures. Le rouge correspond au rythme qui épuise une fenêtre de 5 heures juste à sa fermeture.',
+    timelineSub:      (v) => `Une case = 2 heures, mesurée par rapport à votre bloc habituel de 2 heures (${v}, moyenne de vos blocs actifs). Le rouge correspond à plus du double.`,
     heatLegendVhigh:  'Très élevé',
     heatLegendHigh:   'Élevé',
     heatLegendMedium: 'Moyen',
@@ -686,6 +723,7 @@ const STRINGS = {
     settingReset:     'Réinitialisation hebdomadaire',
     settingResetDesc: 'Configuration unique : lancez /usage dans Claude Code, relevez le moment où votre limite hebdomadaire est réinitialisée et indiquez-le ici. Anthropic le définit par compte — ce n\'est pas le même pour tout le monde. En attendant, le plugin suppose dimanche 18:00 et toute valeur hebdomadaire peut être fausse.',
     settingResetAuto: (d) => `Détecté automatiquement à partir de votre dépassement hebdomadaire du ${d} — aucune configuration requise. À modifier seulement si cela semble incorrect.`,
+    settingResetFeed: (d) => `Repris du flux officiel (relevé du ${d}), exact à la minute et correct même après un changement d\'heure — aucune configuration requise. Une valeur réglée ci-dessous s\'applique jusqu\'à ce qu\'elle corresponde de nouveau au flux.`,
     settingResetDone: (d) => `Défini manuellement le ${d}. À mettre à jour si votre réinitialisation change (par exemple après un changement d\'heure).`,
     calSun: 'Dimanche', calMon: 'Lundi', calTue: 'Mardi', calWed: 'Mercredi',
     calThu: 'Jeudi', calFri: 'Vendredi', calSat: 'Samedi',
@@ -709,16 +747,33 @@ const STRINGS = {
     calNoteEdit:      'Cliquez pour modifier la note',
     limitPulseTitle:    'Situation actuelle',
     limitPulse5h:       'Fenêtre 5h',
-    limitPulseOf5h:     (p) => `${p}% de la limite 5h estimée`,
-    limitPulseBasis:    (n) => `Limite 5h estimée à {v} — médiane de ${n} dépassements observés dans vos propres données.`,
-    limitPulseBand:      (lo, hi) => `En général entre ${lo} et ${hi} (moitié centrale des dépassements).`,
-    limitPulseBasisFeed: `Limite 5h {v}, déduite du pourcentage officiel de votre flux de ligne d'état.`,
-    limitPulseWeekFeed:  `Limite hebdomadaire {v}, déduite du pourcentage officiel de votre flux de ligne d'état.`,
     limitPulseToday:    'Aujourd\'hui',
     limitPulseWeek:     'Cette semaine',
-    limitPulseOfDaily:  (p) => `${p}% de votre journée habituelle`,
-    limitPulseOfWeekly: (p) => `${p}% de la limite hebdomadaire estimée`,
-    limitPulseNoWeekly: 'Limite hebdomadaire pas encore estimée — nécessite au moins un dépassement hebdomadaire observé.',
+    pulseRead:          (tm) => `relevé ${tm}`,
+    pulseSince:         (v) => `+${v} depuis`,
+    pulseProjected:     'extrapolé',
+    pulseOfficialAt:    (p, tm) => `officiel ${p}% à ${tm}`,
+    pulseSinceReset:    'extrapolé depuis la réinitialisation',
+    pulseResetIn:       (v) => `réinitialisation dans ${v}`,
+    pulseNoReading5h:   'pas encore de relevé dans cette fenêtre',
+    pulseNoReadingWk:   'pas encore de relevé cette semaine',
+    pulseNoFeed:        'pas de valeur officielle',
+    pulseReached:       'limite atteinte',
+    pulseUsual:         (x) => `${x}x votre journée habituelle`,
+    pulseSpan:          (lo, hi, n) => `Jusqu'ici, votre fenêtre de 5h était pleine après ${lo} à ${hi} (${n} dépassements).`,
+    pulseSpanOne:       (v) => `Jusqu'ici, votre fenêtre de 5h a été pleine une fois, après ${v}.`,
+    pulseSpanTipFeed:   `Entrée + sortie comptées depuis le début de fenêtre indiqué par Anthropic jusqu'à chaque dépassement. La vitesse à laquelle une fenêtre se remplit dépend surtout du contexte qu'une session transporte.`,
+    pulseSpanTipLogs:   `Entrée + sortie comptées depuis le début de fenêtre reconstitué à partir de vos journaux jusqu'à chaque dépassement. Si claude.ai ou un autre appareil a ouvert la fenêtre, le début peut différer de quelques minutes.`,
+    pulseFeedHint:      'Les pourcentages officiels nécessitent le flux.',
+    pulseFeedLink:      'Comment le configurer',
+    pulseTip5h:         (p, tm, v) => `Officiel ${p}% à ${tm}. Dans une fenêtre, la valeur ne peut que monter : c'est donc un minimum. Compté depuis : ${v}.`,
+    pulseTipWkProjected: (p, tm, v, lim) => `Officiel ${p}% à ${tm}, prolongé avec ${v} comptés depuis, par rapport à la limite hebdomadaire déduite du flux (~${lim}).`,
+    pulseTipWkSinceReset: (lim) => `Aucun relevé depuis la réinitialisation hebdomadaire. Extrapolé à partir de 0% avec la limite de la semaine précédente (~${lim}).`,
+    pulseTipWkOfficial: (p, tm) => `Officiel ${p}% à ${tm}.`,
+    pulseTipNoFeed:     `Tokens comptés uniquement. Token Usage n'affiche un pourcentage de limite que s'il vient d'Anthropic, via le flux.`,
+    pulseTipToday:      `Votre journée habituelle est votre moyenne par jour actif. Anthropic n'a pas de limite journalière.`,
+    pulseMoreWeekly:    (n, p, tm) => `Limite hebdomadaire ${n} : ${p}% (officiel, relevé ${tm})`,
+    pulseMore:          (n, p, tm) => `${n} : ${p}% (officiel, relevé ${tm})`,
     helpSections: [
       {
         title: 'Jetons',
@@ -746,15 +801,15 @@ const STRINGS = {
       },
       {
         title: 'Ce qui compte pour une limite',
-        body:  'Anthropic applique deux limites et rien d\'autre : la fenêtre de 5 heures ci-dessus et un plafond hebdomadaire réinitialisé un jour et à une heure fixes. Il n\'existe pas de limite quotidienne, l\'anneau « Aujourd\'hui » n\'est donc pas un quota (voir « L\'anneau Aujourd\'hui »).\n\nLes tokens d\'entrée et de sortie comptent. Le cache n\'est pas gratuit pour autant : des mesures comparées aux pourcentages officiels (octobre 2026) indiquent que les écritures de cache comptent nettement et les lectures de cache un peu. Les chiffres du plugin ne comptent toujours que l\'entrée et la sortie. Lorsqu\'une longue session doit reconstruire son cache (nouvelle fenêtre de 5 heures après une pause, grand contexte chargé pour la première fois), le chiffre officiel peut donc devancer le plugin. Les longues sessions au contexte volumineux consomment la fenêtre de 5 heures plus vite par réponse que les sessions courtes et récentes.\n\nAucune des deux limites n\'est publiée en tokens. Sans configuration supplémentaire, les deux estimations proviennent de votre propre historique : le plugin ne peut donc les afficher qu\'après vous avoir vu atteindre une limite au moins une fois. L\'estimation hebdomadaire issue des dépassements correspond à la semaine la plus basse ayant atteint le plafond et peut être nettement trop basse, car le cache que le plugin ne compte pas vous y mène aussi. Si un flux de ligne d\'état contenant les pourcentages officiels est présent (~/.claude/ratelimit-log.jsonl), le plugin y ancre les deux limites.',
+        body:  'Anthropic applique deux limites et rien d\'autre : la fenêtre de 5 heures ci-dessus et une limite hebdomadaire qui se réinitialise à un jour et une heure fixes. Il n\'y a pas de limite journalière, l\'anneau Aujourd\'hui n\'est donc pas un quota (voir « L\'anneau Aujourd\'hui »).\n\nLes tokens d\'entrée et de sortie comptent. Le cache n\'est pas gratuit non plus : des mesures par rapport aux pourcentages officiels (octobre 2026) indiquent que les écritures en cache comptent nettement et les lectures un peu. Les chiffres de ce plugin ne comptent que l\'entrée et la sortie.\n\nDepuis la 2.5, Token Usage n\'affiche un pourcentage de limite que s\'il vient d\'Anthropic, toujours avec l\'heure du relevé. Il faut pour cela le flux, un petit fichier avec les pourcentages officiels (~/.claude/ratelimit-log.jsonl, configuration sur la page d\'aide). Entre deux relevés, la semaine est prolongée avec vos tokens comptés et marquée « extrapolé ». La fenêtre de 5 heures ne l\'est pas, car la vitesse à laquelle elle se remplit dépend surtout du contexte qu\'une session transporte, ce que les journaux locaux ne permettent pas de lire de façon fiable. Sans flux, vous voyez les tokens comptés, le temps jusqu\'à la réinitialisation et la fourchette dans laquelle votre fenêtre de 5 heures a été pleine jusqu\'ici.',
       },
       {
         title: 'L\'anneau Aujourd\'hui',
-        body:  'Il n\'existe pas de limite quotidienne. Anthropic limite uniquement la fenêtre de 5 heures et la semaine. L\'anneau « Aujourd\'hui » compare votre consommation du jour à votre propre moyenne par jour actif, calculée sur tous les jours que Claude Code conserve (votre réglage de conservation des données). 200 % signifie que vous travaillez deux fois plus que d\'habitude aujourd\'hui, rien de plus. C\'est pourquoi l\'anneau reste gris : une journée chargée est un changement dans votre façon de travailler, pas un avertissement. Seuls les anneaux de la fenêtre de 5 heures et de la semaine indiquent à quel point vous êtes proche d\'une limite.',
+        body:  'Il n\'y a pas de limite journalière. Anthropic ne limite que la fenêtre de 5 heures et la semaine. L\'anneau Aujourd\'hui compare votre consommation du jour à votre propre moyenne par jour actif, calculée sur tous les jours que Claude Code conserve (votre réglage de conservation des données), et l\'affiche comme un multiple : 2,0x signifie que vous travaillez deux fois plus que d\'habitude aujourd\'hui, rien de plus. C\'est pourquoi l\'anneau reste gris : une journée chargée est un changement de rythme, pas un avertissement. Seuls les anneaux de la fenêtre de 5 heures et de la semaine montrent à quel point vous êtes proche d\'une limite, et seulement avec une valeur officielle.',
       },
       {
         title: 'Carte thermique d\'activité',
-        body:  'La grille sur la page Today couvre votre semaine de facturation en cours. Une ligne par jour calendaire, une case par tranche de deux heures, douze cases par jour.\n\nElle compte huit lignes et non sept : une semaine allant du dimanche 18:00 au dimanche 17:59 touche huit dates calendaires, les première et dernière lignes sont donc volontairement partielles. Les cases hors de la fenêtre sont dessinées en contour vide — c\'est ce qui rend visible la limite de votre cycle.\n\nLa couleur indique le rythme, pas le volume. Une fenêtre de 5 heures contient deux tranches et demie de 2 heures ; consommer tout le budget de façon régulière représente donc 40 % par tranche — le rythme qui vous amène exactement au mur à la fermeture de la fenêtre. Le rouge marque ce rythme ou plus rapide ; les paliers en dessous sont un quart, la moitié et jusqu\'à ce rythme. La nuance au sein d\'un palier indique où s\'y situe la valeur.\n\nTrois sortes de vide restent distinctes : hors fenêtre (contour seul), pas encore atteint (pâle) et réellement aucune activité (plein). Seule la dernière dit quelque chose sur le déroulement de votre semaine.\n\nÀ côté de la grille, « Jours actifs » compte les jours de cette semaine de facturation avec de l\'activité.',
+        body:  'La grille de la page Today couvre votre semaine de facturation en cours. Une ligne par jour civil, une case par tranche de deux heures, douze cases par jour.\n\nElle compte huit lignes, pas sept : une semaine allant par exemple du dimanche 17:00 au dimanche suivant 17:00 touche huit dates, la première et la dernière ligne sont donc volontairement partielles. Les cases hors de la fenêtre sont dessinées comme de simples contours, ce qui rend visible la limite de votre cycle.\n\nLa couleur compare chaque case à votre propre bloc habituel de 2 heures : la moyenne de tous les blocs de 2 heures avec activité sur les jours conservés (la valeur est indiquée sous la grille). Faible signifie moins de la moitié, moyen jusqu\'à ce niveau, élevé jusqu\'au double, rouge plus du double. Jusqu\'à la 2.1, les cases étaient mesurées par rapport à une limite de 5 heures estimée, qui n\'existe plus. La nuance à l\'intérieur d\'une couleur indique où se situe la case dans sa tranche.\n\nTrois sortes de vide restent distinctes : hors de la fenêtre (contour seul), pas encore atteint (pâle) et réellement aucune activité (plein). Seule la dernière dit quelque chose sur le déroulement de votre semaine.\n\nÀ côté de la grille, Jours actifs compte les jours de cette semaine de facturation avec de l\'activité.',
       },
       {
         title: 'Exporter vos données',
@@ -762,19 +817,19 @@ const STRINGS = {
       },
       {
         title: 'Réinitialisation hebdomadaire',
-        body:  'La limite hebdomadaire se réinitialise un jour et à une heure fixes, qui diffèrent selon le compte. Tout ce qui concerne la semaine en dépend : l\'anneau hebdomadaire, la prévision, la carte thermique et l\'estimation elle-même.\n\nEn principe, vous n\'avez rien à régler. Lorsque vous atteignez une limite hebdomadaire, Claude inscrit la prochaine heure de réinitialisation dans le message, et le plugin la lit depuis là — les réglages affichent alors une coche verte et la date du dépassement dont la valeur provient. Tant que cela n\'est jamais arrivé, il suppose dimanche 18:00 et le dit.\n\nVous pouvez le définir à la main sous Réglages → Réinitialisation hebdomadaire. Un réglage manuel l\'emporte : la détection automatique ne l\'écrase pas, elle ne fait que le confirmer. Un coup d\'œil s\'impose après un changement d\'heure si votre réinitialisation semble avoir bougé d\'une heure.',
+        body:  'La limite hebdomadaire se réinitialise à un moment fixe, différent selon le compte. Tout ce qui concerne la semaine en dépend : l\'anneau de la semaine, la prévision et la carte thermique.\n\nEn général, vous n\'avez rien à régler. Avec le flux, le plugin reprend la réinitialisation exacte du relevé officiel. Sans flux, il la lit dans le message que Claude écrit lorsque vous atteignez la limite hebdomadaire. Dans les deux cas, les réglages affichent une coche verte et l\'origine de la valeur. La réinitialisation d\'Anthropic est fixée en UTC, son heure locale se décale donc d\'une heure au changement d\'heure. Depuis la 2.5, une réinitialisation détectée suit automatiquement. Tant qu\'aucune réinitialisation n\'a été détectée, le plugin suppose dimanche 18:00 et le signale.\n\nVous pouvez la régler à la main sous Settings → Réinitialisation hebdomadaire. Un réglage manuel l\'emporte et reste en heure locale : la détection automatique ne l\'écrase pas, elle le confirme seulement.',
       },
       {
         title: 'Les trois vues temporelles',
         body:  'Trois découpages indépendants des mêmes données — ils ne sont pas automatiquement imbriqués.\n\nDernière session de 5 heures — la fenêtre ancrée décrite plus haut. Elle est prise en compte dans votre limite d\'utilisation.\n\nCette session — toutes les entrées portant l\'ID de la session actuelle, quelle que soit la date. Une session Claude Code peut s\'étendre sur plusieurs jours. Si vous avez commencé une session hier et la poursuivez aujourd\'hui, Cette session affichera plus de tokens qu\'Aujourd\'hui. C\'est normal — la session s\'accumule au-delà des limites calendaires.\n\nAujourd\'hui — jour calendaire depuis minuit, indépendamment de la session d\'origine des tokens.\n\nLe sous-libellé sous chaque titre indique immédiatement son périmètre exact. Explication complète sur langeatn.de/media/token-usage/',
       },
       {
-        title: 'Estimation empirique des limites',
-        body:  'Anthropic ne publie pas la limite de tokens réelle derrière un rate-limit hit — elle existe côté serveur et reste invisible. Token Usage la rend visible de façon empirique : chaque rate-limit hit détecté devient un point de données, et suffisamment de points de données donnent une estimation de vos propres limites de session et hebdomadaire (visibles dans la bannière budget du tableau de bord et dans la barre latérale sous « Situation actuelle », où la ligne sous les trois anneaux indique l\'estimation et le nombre de dépassements observés sur lesquels elle repose).\n\nEn dessous, vous voyez aussi une plage habituelle, la moitié centrale de vos dépassements. La même limite est rarement atteinte au même total exact, car d\'autres usages de Claude que Token Usage ne voit pas (par exemple claude.ai dans le navigateur) puisent dans la même limite. Un chiffre seul paraîtrait plus précis qu\'il ne l\'est.\n\nCette estimation n\'est pas statique — elle devient discrètement plus précise à mesure que vous utilisez Claude Code. Chaque nouveau rate-limit hit l\'affine davantage, si bien que le chiffre affiché aujourd\'hui est plus fiable que celui de votre première semaine.',
+        title: 'Vos dépassements et la fourchette',
+        body:  'Anthropic ne publie pas les limites en tokens. Jusqu\'à la 2.1, Token Usage les estimait à partir de vos propres dépassements. Nous avons comparé cette estimation aux pourcentages officiels pendant onze jours en octobre 2026 : pour la fenêtre de 5 heures, elle s\'écartait en moyenne de 36 points, et au moment où une fenêtre était officiellement pleine, l\'anneau affichait entre 61 et 217 %. C\'est pourquoi il n\'y a plus de limite estimée.\n\nCe qui reste, c\'est la fourchette : le nombre de tokens le plus bas et le plus élevé (entrée + sortie, du début de la fenêtre jusqu\'au dépassement) auquel votre fenêtre de 5 heures a été pleine jusqu\'ici. Elle montre à quel point l\'écart est réellement large. Avec le flux, le début de la fenêtre vient d\'Anthropic. Sans flux, il est reconstitué à partir de vos journaux et peut différer de quelques minutes si claude.ai ou un autre appareil a ouvert la fenêtre.',
       },
       {
         title: 'La barre latérale',
-        body:  'Une barre d\'icônes à gauche permet de passer entre quatre pages.\n\nToday — trois anneaux (fenêtre 5h, aujourd\'hui, cette semaine), la carte thermique d\'activité de la semaine de facturation en cours, votre dernière action et la répartition des tokens. Tout ici provient d\'aujourd\'hui ou de la semaine en cours ; ce qui couvre une période plus longue se trouve volontairement ailleurs.\n\nCalendrier — les deux derniers mois sous forme de grilles mensuelles.\n\nAnalytics — les résumés sur 7 jours et N jours en tuiles KPI colorées avec sparklines, ainsi que la répartition par modèle.\n\nSettings — les mêmes réglages que dans l\'onglet des paramètres d\'Obsidian, sans quitter la barre latérale.\n\nDans l\'en-tête : Dashboard et Report génèrent des fichiers, CSV exporte dans votre vault, et la flèche actualise immédiatement.\n\nChacune des quatre lignes de tokens d\'Aujourd\'hui porte un repère compact — un point vert lorsque la valeur est proche de votre moyenne récente, une flèche ambre lorsqu\'elle est nettement plus élevée. La fenêtre de comparaison suit votre réglage de conservation des données Claude, pas un nombre de jours fixe.',
+        body:  'Une barre d\'icônes à gauche permet de passer entre quatre pages.\n\nToday — trois anneaux (fenêtre 5h, aujourd\'hui, cette semaine), la carte thermique d\'activité de la semaine de facturation en cours, votre dernière action et la répartition des tokens. Les anneaux de la fenêtre de 5 heures et de la semaine n\'affichent un pourcentage que s\'il vient d\'Anthropic, avec l\'heure du relevé. Sinon ils restent gris et montrent les tokens comptés et le temps jusqu\'à la réinitialisation. L\'anneau Aujourd\'hui affiche un multiple de votre journée habituelle. Tout ici provient d\'aujourd\'hui ou de la semaine en cours ; ce qui couvre une période plus longue se trouve volontairement ailleurs.\n\nCalendrier — les deux derniers mois sous forme de grilles mensuelles.\n\nAnalytics — les résumés sur 7 jours et N jours en tuiles KPI colorées avec sparklines, ainsi que la répartition par modèle.\n\nSettings — les mêmes réglages que dans l\'onglet des paramètres d\'Obsidian, sans quitter la barre latérale.\n\nDans l\'en-tête : Dashboard et Report génèrent des fichiers, CSV exporte dans votre vault, et la flèche actualise immédiatement.\n\nChacune des quatre lignes de tokens d\'Aujourd\'hui porte un repère compact — un point vert lorsque la valeur est proche de votre moyenne récente, une flèche ambre lorsqu\'elle est nettement plus élevée. La fenêtre de comparaison suit votre réglage de conservation des données Claude, pas un nombre de jours fixe.',
       },
       {
         title: 'Calendrier d\'activité',
@@ -798,7 +853,7 @@ const STRINGS = {
       },
       {
         title: 'Ce qui est mesuré',
-        body:  'Ce plugin lit ce que Claude Code écrit sur le disque. Toutes les façons d\'utiliser Claude Code sont donc couvertes : dans un terminal, dans Obsidian, dans un éditeur comme VS Code, ainsi que le mode agent intégré à l\'application de bureau Claude. Tout cela alimente les mêmes chiffres.\n\nCe qu\'il ne peut pas montrer, c\'est le chat classique — les conversations menées dans l\'application de bureau ou sur claude.ai. Aucun décompte de tokens n\'y est enregistré sur votre machine ; le seul indicateur disponible est un pourcentage arrondi de votre limite actuelle, et non les valeurs réelles sur lesquelles repose ce plugin.\n\nSi une journée vous semble donc plus chargée que ne le suggèrent les chiffres, c\'est généralement l\'explication : votre usage du chat compte dans la même limite, mais ne laisse aucune trace mesurable en local. À garder à l\'esprit surtout pour les estimations de limites, qui ne peuvent être déduites que de la partie visible ici.',
+        body:  'Ce plugin lit ce que Claude Code écrit sur le disque. Toutes les façons d\'utiliser Claude Code sont donc couvertes : dans un terminal, dans Obsidian, dans un éditeur comme VS Code, ainsi que le mode agent intégré à l\'application de bureau Claude. Tout cela alimente les mêmes chiffres.\n\nCe qu\'il ne peut pas montrer, c\'est le chat classique — les conversations menées dans l\'application de bureau ou sur claude.ai. Aucun décompte de tokens n\'y est enregistré sur votre machine ; le seul indicateur disponible est un pourcentage arrondi de votre limite actuelle, et non les valeurs réelles sur lesquelles repose ce plugin.\n\nSi une journée vous semble donc plus chargée que ne le suggèrent les chiffres, c\'est généralement l\'explication : votre usage du chat compte dans la même limite, mais ne laisse aucune trace mesurable en local. C\'est aussi une raison pour laquelle la fourchette de vos dépassements est large, et pour laquelle seuls les pourcentages officiels disent où vous en êtes vraiment.',
       },
       {
         title: 'Archive et données à long terme',
@@ -806,7 +861,7 @@ const STRINGS = {
       },
       {
         title: 'Aperçu des coûts (approximatif, USD)',
-        body:  'Input:        ~3 $ / 1 M de tokens (Sonnet)\nOutput:       ~15 $ / 1 M de tokens\nCache Write:  ~3,75 $ / 1 M de tokens (+25 %)\nCache Read:   ~0,30 $ / 1 M de tokens (−90 %)\n\nLe tarif réel dépend de votre forfait et du modèle. Ces chiffres illustrent pourquoi un facteur de réutilisation élevé réduit considérablement les coûts.\n\nCoût et limites sont deux choses distinctes : les tokens de cache coûtent de l\'argent mais ne vous rapprochent ni de la limite 5h ni de la limite hebdomadaire — voir « Ce qui compte pour une limite ».',
+        body:  'Input:        ~3 $ / 1 M de tokens (Sonnet)\nOutput:       ~15 $ / 1 M de tokens\nCache Write:  ~3,75 $ / 1 M de tokens (+25 %)\nCache Read:   ~0,30 $ / 1 M de tokens (−90 %)\n\nLe tarif réel dépend de votre forfait et du modèle. Ces chiffres illustrent pourquoi un facteur de réutilisation élevé réduit considérablement les coûts.\n\nCoût et limites sont deux choses distinctes, mais le cache intervient dans les deux : les écritures en cache comptent nettement pour les limites et les lectures un peu (voir « Ce qui compte pour une limite »). Une version précédente de ce texte affirmait que le cache ne comptait pas du tout. C\'était faux, c\'est corrigé dans la 2.5.',
       },
     ],
   },
@@ -831,7 +886,7 @@ const STRINGS = {
     helpLink:         '↗ Documentazione completa su langeatn.de',
     heatmapTitle:     'Mappa di attività',
     heatmapCycle:     (range) => `Il tuo ciclo di fatturazione · ${range}`,
-    timelineSub:      'Una cella = 2 ore. Il rosso è il ritmo che svuota una finestra di 5 ore esattamente alla sua chiusura.',
+    timelineSub:      (v) => `Una cella = 2 ore, misurata rispetto al tuo blocco tipico di 2 ore (${v}, media dei tuoi blocchi attivi). Il rosso è più del doppio.`,
     heatLegendVhigh:  'Molto alto',
     heatLegendHigh:   'Alto',
     heatLegendMedium: 'Medio',
@@ -898,6 +953,7 @@ const STRINGS = {
     settingReset:     'Reset settimanale',
     settingResetDesc: 'Configurazione una tantum: esegui /usage in Claude Code, leggi quando viene azzerato il tuo limite settimanale e impostalo qui. Anthropic lo assegna per account — non è uguale per tutti. Fino ad allora il plugin presume domenica 18:00 e ogni valore settimanale può essere errato.',
     settingResetAuto: (d) => `Rilevato automaticamente dal tuo superamento settimanale del ${d} — nessuna configurazione necessaria. Modificalo solo se sembra sbagliato.`,
+    settingResetFeed: (d) => `Preso dal feed ufficiale (lettura del ${d}), preciso al minuto e corretto anche dopo il cambio dell\'ora — nessuna configurazione necessaria. Un valore impostato qui sotto vale finché non coincide di nuovo con il feed.`,
     settingResetDone: (d) => `Impostato manualmente il ${d}. Aggiornalo se il reset cambia (per esempio dopo il cambio dell\'ora).`,
     calSun: 'Domenica', calMon: 'Lunedì', calTue: 'Martedì', calWed: 'Mercoledì',
     calThu: 'Giovedì', calFri: 'Venerdì', calSat: 'Sabato',
@@ -921,16 +977,33 @@ const STRINGS = {
     calNoteEdit:      'Clicca per modificare la nota',
     limitPulseTitle:    'Situazione attuale',
     limitPulse5h:       'Finestra 5h',
-    limitPulseOf5h:     (p) => `${p}% del limite 5h stimato`,
-    limitPulseBasis:    (n) => `Limite 5h stimato a {v} — mediana di ${n} limiti osservati nei tuoi dati.`,
-    limitPulseBand:      (lo, hi) => `Di solito tra ${lo} e ${hi} (metà centrale dei limiti).`,
-    limitPulseBasisFeed: `Limite 5h {v}, ricavato dalla percentuale ufficiale nel feed della tua status line.`,
-    limitPulseWeekFeed:  `Limite settimanale {v}, ricavato dalla percentuale ufficiale nel feed della tua status line.`,
     limitPulseToday:    'Oggi',
     limitPulseWeek:     'Questa settimana',
-    limitPulseOfDaily:  (p) => `${p}% della tua giornata tipica`,
-    limitPulseOfWeekly: (p) => `${p}% del limite settimanale stimato`,
-    limitPulseNoWeekly: 'Limite settimanale non ancora stimato — serve almeno un limite settimanale osservato.',
+    pulseRead:          (tm) => `lettura ${tm}`,
+    pulseSince:         (v) => `+${v} da allora`,
+    pulseProjected:     'proiettato',
+    pulseOfficialAt:    (p, tm) => `ufficiale ${p}% alle ${tm}`,
+    pulseSinceReset:    'proiettato dal reset',
+    pulseResetIn:       (v) => `reset tra ${v}`,
+    pulseNoReading5h:   'ancora nessuna lettura in questa finestra',
+    pulseNoReadingWk:   'ancora nessuna lettura questa settimana',
+    pulseNoFeed:        'nessun valore ufficiale',
+    pulseReached:       'limite raggiunto',
+    pulseUsual:         (x) => `${x}x la tua giornata tipica`,
+    pulseSpan:          (lo, hi, n) => `Finora la tua finestra di 5h era piena dopo un valore tra ${lo} e ${hi} (${n} limiti raggiunti).`,
+    pulseSpanOne:       (v) => `Finora la tua finestra di 5h si è riempita una volta, dopo ${v}.`,
+    pulseSpanTipFeed:   `Input + output contati dall'inizio della finestra indicato da Anthropic fino a ogni limite raggiunto. La velocità con cui una finestra si riempie dipende soprattutto da quanto contesto una sessione si porta dietro.`,
+    pulseSpanTipLogs:   `Input + output contati dall'inizio della finestra ricostruito dai tuoi log fino a ogni limite raggiunto. Se claude.ai o un altro dispositivo ha aperto la finestra, l'inizio può differire di qualche minuto.`,
+    pulseFeedHint:      'Le percentuali ufficiali richiedono il feed.',
+    pulseFeedLink:      'Come configurarlo',
+    pulseTip5h:         (p, tm, v) => `Ufficiale ${p}% alle ${tm}. In una finestra il valore può solo salire, quindi è un minimo. Contati da allora: ${v}.`,
+    pulseTipWkProjected: (p, tm, v, lim) => `Ufficiale ${p}% alle ${tm}, proseguito con ${v} contati da allora, rispetto al limite settimanale che risulta dal feed (~${lim}).`,
+    pulseTipWkSinceReset: (lim) => `Nessuna lettura dal reset settimanale. Proiettato da 0% con il limite della settimana precedente (~${lim}).`,
+    pulseTipWkOfficial: (p, tm) => `Ufficiale ${p}% alle ${tm}.`,
+    pulseTipNoFeed:     'Solo token contati. Token Usage mostra una percentuale di limite solo se viene da Anthropic, tramite il feed.',
+    pulseTipToday:      'La tua giornata tipica è la tua media per giorno attivo. Anthropic non ha un limite giornaliero.',
+    pulseMoreWeekly:    (n, p, tm) => `Limite settimanale ${n}: ${p}% (ufficiale, lettura ${tm})`,
+    pulseMore:          (n, p, tm) => `${n}: ${p}% (ufficiale, lettura ${tm})`,
     helpSections: [
       {
         title: 'Token',
@@ -958,15 +1031,15 @@ const STRINGS = {
       },
       {
         title: 'Cosa conta per un limite',
-        body:  'Anthropic applica due limiti e nient\'altro: la finestra di 5 ore qui sopra e un tetto settimanale che si azzera in un giorno e a un\'ora fissi. Non esiste un limite giornaliero, quindi l\'anello «Oggi» non è una quota (vedi «L\'anello Oggi»).\n\nContano i token di input e output. Ma la cache non è gratuita: misurazioni confrontate con le percentuali ufficiali (ottobre 2026) indicano che le scritture di cache contano chiaramente e le letture di cache un po\'. I numeri del plugin contano ancora solo input e output. Quando una sessione lunga deve ricostruire la sua cache (nuova finestra di 5 ore dopo una pausa, contesto ampio caricato per la prima volta), il valore ufficiale può quindi superare quello del plugin. Le sessioni lunghe con un contesto ampio consumano la finestra di 5 ore più in fretta per ogni risposta rispetto a quelle nuove e brevi.\n\nNessuno dei due limiti è pubblicato in token. Senza ulteriori configurazioni, entrambe le stime derivano dalla tua cronologia, per questo il plugin può mostrarle solo dopo averti visto raggiungere un limite almeno una volta. La stima settimanale dai limiti raggiunti è la settimana più bassa che abbia mai toccato il tetto e può risultare molto troppo bassa, perché anche la cache, che il plugin non conta, ti porta al limite. Se è presente un feed della status line con le percentuali ufficiali (~/.claude/ratelimit-log.jsonl), il plugin ancora entrambi i limiti a quello.',
+        body:  'Anthropic applica due limiti e nient\'altro: la finestra di 5 ore qui sopra e un limite settimanale che si azzera in un giorno e a un\'ora fissi. Non esiste un limite giornaliero, quindi l\'anello Oggi non è una quota (vedi «L\'anello Oggi»).\n\nContano i token di input e output. Neanche la cache è gratuita: misurazioni rispetto alle percentuali ufficiali (ottobre 2026) indicano che le scritture in cache contano chiaramente e le letture un po\'. I numeri di questo plugin contano solo input e output.\n\nDalla 2.5, Token Usage mostra una percentuale di limite solo se viene da Anthropic, sempre con l\'ora della lettura. Per questo serve il feed, un piccolo file con le percentuali ufficiali (~/.claude/ratelimit-log.jsonl, configurazione nella pagina di aiuto). Tra due letture la settimana viene proseguita con i tuoi token contati e indicata come «proiettato». La finestra di 5 ore no, perché la velocità con cui si riempie dipende soprattutto da quanto contesto una sessione si porta dietro, e i log locali non lo dicono in modo affidabile. Senza feed vedi i token contati, il tempo al reset e l\'intervallo in cui la tua finestra di 5 ore si è riempita finora.',
       },
       {
         title: 'L\'anello Oggi',
-        body:  'Non esiste un limite giornaliero. Anthropic limita solo la finestra di 5 ore e la settimana. L\'anello «Oggi» confronta il tuo consumo di oggi con la tua media per giorno attivo, calcolata su tutti i giorni che Claude Code conserva (la tua impostazione di conservazione dei dati). 200 % significa che oggi lavori il doppio del solito, niente di più. Per questo l\'anello resta grigio: una giornata intensa è un cambiamento nel modo di lavorare, non un avviso. Quanto sei vicino a un limite lo mostrano solo gli anelli della finestra di 5 ore e della settimana.',
+        body:  'Non esiste un limite giornaliero. Anthropic limita solo la finestra di 5 ore e la settimana. L\'anello Oggi confronta il consumo di oggi con la tua media per giorno attivo, calcolata su tutti i giorni che Claude Code conserva (la tua impostazione di conservazione dei dati), e lo mostra come multiplo: 2,0x significa che oggi lavori il doppio del solito, niente di più. Per questo l\'anello resta grigio: una giornata intensa è un cambiamento nel modo di lavorare, non un avviso. Quanto sei vicino a un limite lo mostrano solo gli anelli della finestra di 5 ore e della settimana, e solo con un valore ufficiale.',
       },
       {
         title: 'Mappa di attività',
-        body:  'La griglia nella pagina Today copre la tua settimana di fatturazione in corso. Una riga per giorno di calendario, una cella ogni due ore, dodici celle al giorno.\n\nHa otto righe, non sette: una settimana che va da domenica 18:00 a domenica 17:59 tocca otto date di calendario, quindi la prima e l\'ultima riga sono volutamente parziali. Le celle fuori dalla finestra sono disegnate come contorni vuoti — è questo che rende visibile il confine del tuo ciclo.\n\nIl colore indica il ritmo, non il volume. Una finestra di 5 ore contiene due intervalli e mezzo da 2 ore; consumare tutto il budget in modo uniforme significa quindi il 40% per intervallo — il ritmo con cui arrivi al muro esattamente alla chiusura della finestra. Il rosso segna quel ritmo o superiore; i livelli sottostanti sono un quarto, la metà e fino a quel ritmo. La sfumatura all\'interno di un livello indica dove si colloca il valore.\n\nTre tipi di vuoto restano distinti: fuori dalla finestra (solo contorno), non ancora raggiunto (pallido) e davvero nessuna attività (pieno). Solo l\'ultimo dice qualcosa su come è andata la tua settimana.\n\nAccanto alla griglia, «Giorni attivi» conta i giorni di questa settimana di fatturazione con attività.',
+        body:  'La griglia della pagina Today copre la tua settimana di fatturazione in corso. Una riga per giorno di calendario, una cella ogni due ore, dodici celle al giorno.\n\nHa otto righe, non sette: una settimana che va per esempio da domenica 17:00 alla domenica successiva 17:00 tocca otto date, quindi la prima e l\'ultima riga sono volutamente parziali. Le celle fuori dalla finestra sono disegnate come semplici contorni, così il confine del tuo ciclo resta visibile.\n\nIl colore confronta ogni cella con il tuo blocco tipico di 2 ore: la media di tutti i blocchi di 2 ore con attività sui giorni conservati (il valore è indicato sotto la griglia). Basso è meno della metà, medio fino a quel valore, alto fino al doppio, rosso più del doppio. Fino alla 2.1 le celle venivano misurate rispetto a un limite di 5 ore stimato, che non esiste più. La sfumatura all\'interno di un colore indica dove si trova la cella nella sua fascia.\n\nTre tipi di vuoto restano distinti: fuori dalla finestra (solo contorno), non ancora raggiunto (tenue) e davvero nessuna attività (pieno). Solo l\'ultimo dice qualcosa su come è andata la tua settimana.\n\nAccanto alla griglia, Giorni attivi conta i giorni di questa settimana di fatturazione con attività.',
       },
       {
         title: 'Esportare i dati',
@@ -974,19 +1047,19 @@ const STRINGS = {
       },
       {
         title: 'Reset settimanale',
-        body:  'Il limite settimanale si azzera in un giorno e a un\'ora fissi, diversi per ogni account. Tutto ciò che riguarda la settimana dipende da questo: l\'anello settimanale, la previsione, la mappa di calore e la stima stessa.\n\nNormalmente non devi impostare nulla. Quando raggiungi un limite settimanale, Claude scrive nel messaggio l\'orario del prossimo reset, e il plugin lo legge da lì — le impostazioni mostrano allora un segno di spunta verde e la data del limite da cui proviene il valore. Finché questo non è mai accaduto, assume domenica 18:00 e lo dichiara.\n\nPuoi impostarlo manualmente in Impostazioni → Reset settimanale. Un\'impostazione manuale prevale: il rilevamento automatico non la sovrascrive, si limita a confermarla. Vale la pena ricontrollare dopo un cambio dell\'ora, se il reset sembra essersi spostato di un\'ora.',
+        body:  'Il limite settimanale si azzera in un momento fisso, diverso per ogni account. Tutto ciò che riguarda la settimana dipende da questo: l\'anello della settimana, la previsione e la mappa di attività.\n\nDi norma non devi impostare nulla. Con il feed, il plugin prende il reset esatto dalla lettura ufficiale. Senza feed, lo legge dal messaggio che Claude scrive quando raggiungi il limite settimanale. In entrambi i casi le impostazioni mostrano una spunta verde e da dove viene il valore. Il reset di Anthropic è fisso in UTC, quindi la sua ora locale si sposta di un\'ora al cambio dell\'ora. Dalla 2.5 un reset rilevato segue automaticamente. Finché non è stato rilevato alcun reset, il plugin presume domenica 18:00 e lo dice.\n\nPuoi impostarlo a mano in Settings → Reset settimanale. Un\'impostazione manuale ha la precedenza e resta in ora locale: il rilevamento automatico non la sovrascrive, la conferma soltanto.',
       },
       {
         title: 'Le tre viste temporali',
         body:  'Tre viste indipendenti sugli stessi dati — non sono automaticamente annidate.\n\nUltima sessione di 5 ore — la finestra ancorata descritta sopra. Conta ai fini del limite di utilizzo.\n\nQuesta sessione — tutte le voci con l\'ID della sessione corrente, indipendentemente dalla data di calendario. Una sessione di Claude Code può durare più giorni. Se hai iniziato una sessione ieri e la stai ancora usando oggi, Questa sessione mostrerà più token di Oggi. È previsto — la sessione si accumula oltre i confini del calendario.\n\nOggi — giorno di calendario da mezzanotte, indipendentemente dalla sessione da cui provengono i token.\n\nIl sottotitolo sotto ogni titolo mostra subito l\'ambito esatto. Spiegazione completa su langeatn.de/media/token-usage/',
       },
       {
-        title: 'Stima empirica dei limiti',
-        body:  'Anthropic non pubblica il limite di token reale dietro un rate-limit hit — esiste lato server e resta invisibile. Token Usage lo rende visibile in modo empirico: ogni rate-limit hit rilevato diventa un punto dati, e punti dati sufficienti diventano una stima dei tuoi limiti personali di sessione e settimanali (visibili nel banner del budget della dashboard e nella barra laterale sotto «Situazione attuale», dove la riga sotto i tre anelli indica la stima e su quanti limiti osservati si basa).\n\nSotto vedi anche una fascia abituale, la metà centrale dei tuoi limiti. Lo stesso limite raramente viene raggiunto allo stesso totale esatto, perché anche altro uso di Claude che Token Usage non può vedere (ad esempio claude.ai nel browser) attinge allo stesso limite. Un solo numero sembrerebbe più preciso di quanto sia.\n\nLa stima non è statica — diventa silenziosamente più precisa quanto più usi Claude Code. Ogni nuovo rate-limit hit la affina ulteriormente, quindi il numero che vedi oggi è più affidabile di quello della tua prima settimana.',
+        title: 'I tuoi limiti raggiunti e l\'intervallo',
+        body:  'Anthropic non pubblica i limiti in token. Fino alla 2.1, Token Usage li stimava dai tuoi limiti raggiunti. Abbiamo confrontato questa stima con le percentuali ufficiali per undici giorni a ottobre 2026: per la finestra di 5 ore si discostava in media di 36 punti, e nel momento in cui una finestra era ufficialmente piena l\'anello segnava tra il 61 e il 217 per cento. Per questo non c\'è più un limite stimato.\n\nResta l\'intervallo: il numero di token più basso e più alto (input + output, dall\'inizio della finestra fino al limite) a cui la tua finestra di 5 ore si è riempita finora. Mostra quanto è davvero ampio. Con il feed l\'inizio della finestra viene da Anthropic. Senza feed viene ricostruito dai tuoi log e può differire di qualche minuto se claude.ai o un altro dispositivo ha aperto la finestra.',
       },
       {
         title: 'La barra laterale',
-        body:  'Una barra di icone a sinistra passa tra quattro pagine.\n\nToday — tre anelli (finestra 5h, oggi, questa settimana), la mappa di calore della settimana di fatturazione in corso, la tua ultima azione e la ripartizione dei token. Tutto qui proviene da oggi o dalla settimana in corso; ciò che copre un periodo più lungo si trova volutamente altrove.\n\nCalendario — gli ultimi due mesi come griglie mensili.\n\nAnalytics — i riepiloghi su 7 giorni e N giorni come riquadri KPI colorati con sparkline, più la distribuzione per modello.\n\nSettings — le stesse impostazioni della scheda impostazioni di Obsidian, senza lasciare la barra laterale.\n\nNell\'intestazione: Dashboard e Report generano file, CSV esporta nel tuo vault, la freccia aggiorna subito.\n\nCiascuna delle quattro righe di token in Oggi porta un indicatore compatto — un punto verde quando il valore è vicino alla tua media recente, una freccia ambra quando è nettamente più alto. La finestra di confronto segue la tua impostazione di conservazione dei dati Claude, non un numero fisso di giorni.',
+        body:  'Una barra di icone a sinistra passa tra quattro pagine.\n\nToday — tre anelli (finestra 5h, oggi, questa settimana), la mappa di calore della settimana di fatturazione in corso, la tua ultima azione e la ripartizione dei token. Gli anelli della finestra di 5 ore e della settimana mostrano una percentuale solo se viene da Anthropic, con l\'ora della lettura. Altrimenti restano grigi e mostrano i token contati e il tempo al reset. L\'anello Oggi mostra un multiplo della tua giornata tipica. Tutto qui proviene da oggi o dalla settimana in corso; ciò che copre un periodo più lungo si trova volutamente altrove.\n\nCalendario — gli ultimi due mesi come griglie mensili.\n\nAnalytics — i riepiloghi su 7 giorni e N giorni come riquadri KPI colorati con sparkline, più la distribuzione per modello.\n\nSettings — le stesse impostazioni della scheda impostazioni di Obsidian, senza lasciare la barra laterale.\n\nNell\'intestazione: Dashboard e Report generano file, CSV esporta nel tuo vault, la freccia aggiorna subito.\n\nCiascuna delle quattro righe di token in Oggi porta un indicatore compatto — un punto verde quando il valore è vicino alla tua media recente, una freccia ambra quando è nettamente più alto. La finestra di confronto segue la tua impostazione di conservazione dei dati Claude, non un numero fisso di giorni.',
       },
       {
         title: 'Calendario attività',
@@ -1010,7 +1083,7 @@ const STRINGS = {
       },
       {
         title: 'Cosa viene misurato',
-        body:  'Questo plugin legge ciò che Claude Code scrive su disco. Sono quindi coperti tutti i modi in cui usi Claude Code: nel terminale, in Obsidian, in un editor come VS Code e nella modalità agente integrata nell\'app desktop di Claude. Tutto confluisce negli stessi numeri.\n\nCiò che non può mostrare è la chat normale — le conversazioni nell\'app desktop o su claude.ai. Lì nessun conteggio di token viene salvato sul tuo computer; l\'unico segnale disponibile è una percentuale arrotondata del limite attuale, non i valori reali su cui si basa questo plugin.\n\nQuindi, se una giornata sembra più intensa di quanto suggeriscano i numeri, di solito il motivo è questo: il consumo in chat incide sullo stesso limite, ma non lascia alcuna traccia misurabile in locale. Da tenere presente soprattutto per le stime dei limiti, che possono essere ricavate solo dalla parte qui visibile.',
+        body:  'Questo plugin legge ciò che Claude Code scrive su disco. Sono quindi coperti tutti i modi in cui usi Claude Code: nel terminale, in Obsidian, in un editor come VS Code e nella modalità agente integrata nell\'app desktop di Claude. Tutto confluisce negli stessi numeri.\n\nCiò che non può mostrare è la chat normale — le conversazioni nell\'app desktop o su claude.ai. Lì nessun conteggio di token viene salvato sul tuo computer; l\'unico segnale disponibile è una percentuale arrotondata del limite attuale, non i valori reali su cui si basa questo plugin.\n\nQuindi, se una giornata sembra più intensa di quanto suggeriscano i numeri, di solito il motivo è questo: il consumo in chat incide sullo stesso limite, ma non lascia alcuna traccia misurabile in locale. È anche uno dei motivi per cui l\'intervallo dei tuoi limiti raggiunti è ampio, e per cui solo le percentuali ufficiali dicono dove ti trovi davvero.',
       },
       {
         title: 'Archivio e dati a lungo termine',
@@ -1018,7 +1091,7 @@ const STRINGS = {
       },
       {
         title: 'Panoramica dei costi (approssimativa, USD)',
-        body:  'Input:        ~3 $ / 1 M di token (Sonnet)\nOutput:       ~15 $ / 1 M di token\nCache Write:  ~3,75 $ / 1 M di token (+25%)\nCache Read:   ~0,30 $ / 1 M di token (−90%)\n\nIl prezzo effettivo dipende dal tuo piano e dal modello. Questi valori mostrano perché un fattore di riutilizzo elevato riduce significativamente i costi.\n\nCosto e limiti sono due cose diverse: i token di cache costano denaro ma non ti avvicinano al limite di 5 ore né a quello settimanale — vedi «Cosa conta per un limite».',
+        body:  'Input:        ~3 $ / 1 M di token (Sonnet)\nOutput:       ~15 $ / 1 M di token\nCache Write:  ~3,75 $ / 1 M di token (+25%)\nCache Read:   ~0,30 $ / 1 M di token (−90%)\n\nIl prezzo effettivo dipende dal tuo piano e dal modello. Questi valori mostrano perché un fattore di riutilizzo elevato riduce significativamente i costi.\n\nCosto e limiti sono due cose diverse, ma la cache rientra in entrambi: le scritture in cache contano chiaramente per i limiti e le letture un po\' (vedi «Cosa conta per un limite»). Una versione precedente di questo testo diceva che la cache non contava affatto. Era sbagliato ed è corretto nella 2.5.',
       },
     ],
   },
@@ -1046,7 +1119,7 @@ const STRINGS = {
     helpLink:         '↗ Documentación completa en langeatn.de',
     heatmapTitle:     'Mapa de actividad',
     heatmapCycle:     (range) => `Tu ciclo de facturación · ${range}`,
-    timelineSub:      'Una celda = 2 horas. El rojo es el ritmo que vaciaría una ventana de 5 horas justo al cerrarse.',
+    timelineSub:      (v) => `Una celda = 2 horas, medida frente a tu bloque habitual de 2 horas (${v}, media de tus bloques activos). El rojo es más del doble.`,
     heatLegendVhigh:  'Muy alto',
     heatLegendHigh:   'Alto',
     heatLegendMedium: 'Medio',
@@ -1113,6 +1186,7 @@ const STRINGS = {
     settingReset:     'Reinicio semanal',
     settingResetDesc: 'Configuración única: ejecuta /usage en Claude Code, mira cuándo se reinicia tu límite semanal e indícalo aquí. Anthropic lo asigna por cuenta — no es igual para todos. Hasta que lo hagas, el plugin supone domingo a las 18:00 y cualquier cifra semanal puede estar desviada.',
     settingResetAuto: (d) => `Detectado automáticamente a partir de tu límite semanal alcanzado el ${d} — no hace falta configurar nada. Cámbialo abajo solo si parece incorrecto.`,
+    settingResetFeed: (d) => `Tomado del feed oficial (lectura del ${d}), exacto al minuto y correcto también tras un cambio de hora — no hace falta configurar nada. Un valor que fijes abajo vale hasta que vuelva a coincidir con el feed.`,
     settingResetDone: (d) => `Establecido manualmente el ${d}. Actualízalo si tu reinicio cambia (por ejemplo tras un cambio de hora).`,
     calSun: 'Domingo', calMon: 'Lunes', calTue: 'Martes', calWed: 'Miércoles',
     calThu: 'Jueves', calFri: 'Viernes', calSat: 'Sábado',
@@ -1136,16 +1210,33 @@ const STRINGS = {
     calNoteEdit:      'Haz clic para editar la nota',
     limitPulseTitle:    'Situación actual',
     limitPulse5h:       'Ventana 5 h',
-    limitPulseOf5h:     (p) => `${p}% del límite estimado de 5 h`,
-    limitPulseBasis:    (n) => `Límite de 5 h estimado en {v} — mediana de ${n} límites observados en tus propios datos.`,
-    limitPulseBand:      (lo, hi) => `Normalmente entre ${lo} y ${hi} (mitad central de los límites).`,
-    limitPulseBasisFeed: `Límite de 5 h {v}, derivado del porcentaje oficial de tu feed de línea de estado.`,
-    limitPulseWeekFeed:  `Límite semanal {v}, derivado del porcentaje oficial de tu feed de línea de estado.`,
     limitPulseToday:    'Hoy',
     limitPulseWeek:     'Esta semana',
-    limitPulseOfDaily:  (p) => `${p}% de tu día habitual`,
-    limitPulseOfWeekly: (p) => `${p}% del límite semanal estimado`,
-    limitPulseNoWeekly: 'Límite semanal aún no estimado — hace falta al menos un límite semanal observado.',
+    pulseRead:          (tm) => `lectura ${tm}`,
+    pulseSince:         (v) => `+${v} desde entonces`,
+    pulseProjected:     'proyectado',
+    pulseOfficialAt:    (p, tm) => `oficial ${p}% a las ${tm}`,
+    pulseSinceReset:    'proyectado desde el reinicio',
+    pulseResetIn:       (v) => `reinicio en ${v}`,
+    pulseNoReading5h:   'aún no hay lectura en esta ventana',
+    pulseNoReadingWk:   'aún no hay lectura esta semana',
+    pulseNoFeed:        'sin valor oficial',
+    pulseReached:       'límite alcanzado',
+    pulseUsual:         (x) => `${x}x tu día habitual`,
+    pulseSpan:          (lo, hi, n) => `Hasta ahora tu ventana de 5 h se llenó tras entre ${lo} y ${hi} (${n} límites alcanzados).`,
+    pulseSpanOne:       (v) => `Hasta ahora tu ventana de 5 h se llenó una vez, tras ${v}.`,
+    pulseSpanTipFeed:   'Entrada + salida contadas desde el inicio de ventana que indica Anthropic hasta cada límite alcanzado. Lo rápido que se llena una ventana depende sobre todo de cuánto contexto arrastra una sesión.',
+    pulseSpanTipLogs:   'Entrada + salida contadas desde el inicio de ventana reconstruido a partir de tus registros hasta cada límite alcanzado. Si claude.ai u otro dispositivo abrió la ventana, el inicio puede variar unos minutos.',
+    pulseFeedHint:      'Los porcentajes oficiales necesitan el feed.',
+    pulseFeedLink:      'Cómo configurarlo',
+    pulseTip5h:         (p, tm, v) => `Oficial ${p}% a las ${tm}. Dentro de una ventana solo puede subir, así que es un mínimo. Contado desde entonces: ${v}.`,
+    pulseTipWkProjected: (p, tm, v, lim) => `Oficial ${p}% a las ${tm}, continuado con ${v} contados desde entonces, frente al límite semanal que resulta del feed (~${lim}).`,
+    pulseTipWkSinceReset: (lim) => `Aún no hay lectura desde el reinicio semanal. Proyectado desde 0% con el límite de la semana anterior (~${lim}).`,
+    pulseTipWkOfficial: (p, tm) => `Oficial ${p}% a las ${tm}.`,
+    pulseTipNoFeed:     'Solo tokens contados. Token Usage muestra un porcentaje de límite solo si viene de Anthropic, a través del feed.',
+    pulseTipToday:      'Tu día habitual es tu media por día activo. Anthropic no tiene límite diario.',
+    pulseMoreWeekly:    (n, p, tm) => `Límite semanal de ${n}: ${p}% (oficial, lectura ${tm})`,
+    pulseMore:          (n, p, tm) => `${n}: ${p}% (oficial, lectura ${tm})`,
     helpSections: [
       {
         title: 'Tokens',
@@ -1173,15 +1264,15 @@ const STRINGS = {
       },
       {
         title: 'Qué cuenta para un límite',
-        body:  'Anthropic aplica dos límites y ninguno más: la ventana de 5 horas de arriba y un tope semanal que se reinicia un día y a una hora fijos. No existe un límite diario, por eso el anillo «Hoy» no es una cuota (ver «El anillo Hoy»).\n\nCuentan los tokens de entrada y salida. Pero la caché no es gratis: mediciones comparadas con los porcentajes oficiales (octubre de 2026) indican que las escrituras de caché cuentan claramente y las lecturas de caché un poco. Las cifras del plugin siguen contando solo entrada y salida. Cuando una sesión larga tiene que reconstruir su caché (nueva ventana de 5 horas tras una pausa, un contexto grande cargado por primera vez), la cifra oficial puede ir por delante del plugin. Las sesiones largas con mucho contexto gastan la ventana de 5 horas más deprisa por respuesta que las sesiones nuevas y cortas.\n\nNinguno de los dos límites se publica en tokens. Sin más configuración, ambas estimaciones salen de tu propio historial, por eso el plugin solo puede mostrarlas después de haberte visto alcanzar un límite al menos una vez. La estimación semanal a partir de límites alcanzados es la semana más baja que llegó al tope y puede quedar muy por debajo, porque la caché, que el plugin no cuenta, también te lleva al límite. Si existe un feed de la línea de estado con los porcentajes oficiales (~/.claude/ratelimit-log.jsonl), el plugin ancla ambos límites a él.',
+        body:  'Anthropic aplica dos límites y nada más: la ventana de 5 horas de arriba y un límite semanal que se reinicia en un día y una hora fijos. No hay límite diario, así que el anillo Hoy no es una cuota (ver «El anillo Hoy»).\n\nCuentan los tokens de entrada y salida. La caché tampoco es gratis: mediciones frente a los porcentajes oficiales (octubre de 2026) indican que las escrituras en caché cuentan claramente y las lecturas un poco. Las cifras de este plugin cuentan solo entrada y salida.\n\nDesde la 2.5, Token Usage muestra un porcentaje de límite solo si viene de Anthropic, siempre con la hora de la lectura. Para eso necesitas el feed, un pequeño archivo con los porcentajes oficiales (~/.claude/ratelimit-log.jsonl, configuración en la página de ayuda). Entre dos lecturas la semana se continúa con tus tokens contados y se marca como «proyectado». La ventana de 5 horas no, porque lo rápido que se llena depende sobre todo de cuánto contexto arrastra una sesión, y los registros locales no lo dicen de forma fiable. Sin feed ves los tokens contados, el tiempo hasta el reinicio y el rango en el que tu ventana de 5 horas se ha llenado hasta ahora.',
       },
       {
         title: 'El anillo Hoy',
-        body:  'No existe un límite diario. Anthropic solo limita la ventana de 5 horas y la semana. El anillo «Hoy» compara lo que has usado hoy con tu propia media por día activo, calculada sobre todos los días que Claude Code conserva (tu ajuste de retención de datos). 200 % significa que hoy trabajas el doble de lo habitual, nada más. Por eso el anillo se queda gris: un día intenso es un cambio en tu forma de trabajar, no un aviso. Lo cerca que estás de un límite solo lo muestran los anillos de la ventana de 5 horas y de la semana.',
+        body:  'No hay límite diario. Anthropic solo limita la ventana de 5 horas y la semana. El anillo Hoy compara lo que has usado hoy con tu propia media por día activo, calculada sobre todos los días que Claude Code conserva (tu ajuste de retención de datos), y lo muestra como múltiplo: 2,0x significa que hoy trabajas el doble de lo habitual, nada más. Por eso el anillo se queda gris: un día intenso es un cambio en tu forma de trabajar, no un aviso. Lo cerca que estás de un límite solo lo muestran los anillos de la ventana de 5 horas y de la semana, y solo con un valor oficial.',
       },
       {
         title: 'Mapa de actividad',
-        body:  'La cuadrícula de la página Today cubre tu semana de facturación en curso. Una fila por día natural, una celda cada dos horas, doce celdas al día.\n\nTiene ocho filas, no siete: una semana que va de domingo 18:00 a domingo 17:59 toca ocho fechas del calendario, así que la primera y la última fila son parciales a propósito. Las celdas fuera de la ventana se dibujan solo con contorno — eso es lo que hace visible el límite de tu ciclo.\n\nEl color indica el ritmo, no el volumen. Una ventana de 5 horas contiene dos tramos y medio de 2 horas; gastar todo el presupuesto de forma uniforme son por tanto el 40% por tramo — el ritmo con el que llegas al muro justo al cerrarse la ventana. El rojo marca ese ritmo o más rápido; los niveles inferiores son un cuarto, la mitad y hasta ese ritmo. El matiz dentro de un nivel indica dónde se sitúa el valor.\n\nTres clases de vacío se mantienen separadas: fuera de la ventana (solo contorno), aún no alcanzado (pálido) y realmente sin actividad (relleno). Solo la última dice algo sobre cómo fue tu semana.\n\nJunto a la cuadrícula, «Días activos» cuenta los días de esta semana de facturación con actividad.',
+        body:  'La cuadrícula de la página Today cubre tu semana de facturación en curso. Una fila por día natural, una celda cada dos horas, doce celdas por día.\n\nTiene ocho filas, no siete: una semana que va por ejemplo del domingo 17:00 al domingo siguiente 17:00 toca ocho fechas, así que la primera y la última fila son parciales a propósito. Las celdas fuera de la ventana se dibujan solo como contornos, lo que hace visible el límite de tu ciclo.\n\nEl color compara cada celda con tu propio bloque habitual de 2 horas: la media de todos los bloques de 2 horas con actividad en los días guardados (el valor aparece bajo la cuadrícula). Bajo es menos de la mitad, medio hasta ese valor, alto hasta el doble, rojo más del doble. Hasta la 2.1 las celdas se medían frente a un límite de 5 horas estimado, que ya no existe. El matiz dentro de un color indica dónde se sitúa la celda en su franja.\n\nTres tipos de vacío se mantienen separados: fuera de la ventana (solo contorno), aún no alcanzado (tenue) y realmente sin actividad (relleno). Solo el último dice algo sobre cómo fue tu semana.\n\nJunto a la cuadrícula, Días activos cuenta los días de esta semana de facturación con actividad.',
       },
       {
         title: 'Exportar tus datos',
@@ -1189,19 +1280,19 @@ const STRINGS = {
       },
       {
         title: 'Reinicio semanal',
-        body:  'El límite semanal se reinicia un día y a una hora fijos, distintos para cada cuenta. Todo lo relacionado con la semana depende de ello: el anillo semanal, la previsión, el mapa de actividad y la propia estimación.\n\nNormalmente no tienes que configurar nada. Cuando alcanzas un límite semanal, Claude escribe en el mensaje la hora del siguiente reinicio, y el plugin la lee de ahí — los ajustes muestran entonces una marca verde y la fecha del límite del que procede el valor. Mientras eso no haya ocurrido nunca, supone domingo a las 18:00 y lo indica.\n\nPuedes fijarlo a mano en Ajustes → Reinicio semanal. Un ajuste manual prevalece: la detección automática no lo sobrescribe, solo lo confirma. Conviene revisarlo tras un cambio de hora si tu reinicio parece haberse movido una hora.',
+        body:  'El límite semanal se reinicia en un momento fijo que varía según la cuenta. Todo lo semanal depende de él: el anillo de la semana, la previsión y el mapa de actividad.\n\nNormalmente no tienes que configurar nada. Con el feed, el plugin toma el reinicio exacto de la lectura oficial. Sin feed, lo lee del mensaje que Claude escribe cuando alcanzas el límite semanal. En ambos casos los ajustes muestran una marca verde y de dónde viene el valor. El reinicio de Anthropic está fijado en UTC, así que su hora local se desplaza una hora con el cambio de horario. Desde la 2.5 un reinicio detectado lo sigue automáticamente. Mientras no se haya detectado ningún reinicio, el plugin supone domingo 18:00 y lo indica.\n\nPuedes fijarlo a mano en Ajustes → Reinicio semanal. Un ajuste manual tiene prioridad y se queda en hora local: la detección automática no lo sobrescribe, solo lo confirma.',
       },
       {
         title: 'Las tres vistas temporales',
         body:  'Tres cortes independientes de los mismos datos — no están anidados automáticamente.\n\nÚltima sesión de 5 horas — la ventana anclada descrita arriba. Cuenta para tu límite de uso.\n\nEsta sesión — todas las entradas con el ID de sesión actual, sin importar la fecha. Una sesión de Claude Code puede abarcar varios días. Si empezaste ayer y sigues en ella hoy, «Esta sesión» mostrará más tokens que «Hoy». Es lo esperado — la sesión acumula más allá de los límites del calendario.\n\nHoy — día natural desde medianoche, sin importar de qué sesión vengan los tokens.\n\nLa descripción bajo cada título muestra su alcance exacto de un vistazo. Explicación completa en langeatn.de/media/token-usage/',
       },
       {
-        title: 'Estimación empírica de límites',
-        body:  'Anthropic no publica el límite real de tokens que hay detrás de un rate-limit hit — existe en el servidor y permanece invisible. Token Usage lo hace visible de forma empírica: cada rate-limit hit detectado se convierte en un dato, y suficientes datos dan una estimación de tus propios límites de sesión y semanal (visibles en el banner de presupuesto del panel y en la barra lateral bajo «Situación actual», donde la línea bajo los tres anillos indica la estimación y sobre cuántos límites observados se basa).\n\nDebajo ves también una banda habitual, la mitad central de tus límites. El mismo límite rara vez se alcanza con exactamente el mismo total, porque otro uso de Claude que Token Usage no puede ver (por ejemplo claude.ai en el navegador) consume del mismo límite. Un solo número parecería más preciso de lo que es.\n\nLa estimación no es estática — se vuelve más precisa cuanto más usas Claude Code. Cada nuevo rate-limit hit la afina, de modo que la cifra que ves hoy es más fiable que la de tu primera semana.',
+        title: 'Tus límites alcanzados y el rango',
+        body:  'Anthropic no publica los límites en tokens. Hasta la 2.1, Token Usage los estimaba a partir de tus propios límites alcanzados. Comparamos esa estimación con los porcentajes oficiales durante once días en octubre de 2026: en la ventana de 5 horas se desviaba de media 36 puntos, y en el momento en que una ventana estaba oficialmente llena el anillo marcaba entre el 61 y el 217 por ciento. Por eso ya no hay un límite estimado.\n\nLo que queda es el rango: el recuento de tokens más bajo y el más alto (entrada + salida, desde el inicio de la ventana hasta el límite) con el que tu ventana de 5 horas se ha llenado hasta ahora. Muestra lo amplio que es en realidad. Con el feed, el inicio de la ventana viene de Anthropic. Sin feed, se reconstruye a partir de tus registros y puede variar unos minutos si claude.ai u otro dispositivo abrió la ventana.',
       },
       {
         title: 'La barra lateral',
-        body:  'Una barra de iconos a la izquierda cambia entre cuatro páginas.\n\nToday — tres anillos (ventana 5 h, hoy, esta semana), el mapa de actividad de la semana de facturación en curso, tu última acción y el desglose de tokens. Todo aquí es de hoy o de la semana en curso; lo que abarca más tiempo está deliberadamente en otro sitio.\n\nCalendario — los dos últimos meses como cuadrículas mensuales.\n\nAnalíticas — los resúmenes de 7 y N días como tarjetas KPI con minigráficos de tendencia, más la distribución por modelo.\n\nAjustes — los mismos ajustes que en la pestaña de configuración de Obsidian, sin salir de la barra lateral.\n\nEn la cabecera: Dashboard e Report generan archivos, CSV exporta a tu vault, y la flecha actualiza de inmediato.\n\nCada una de las cuatro filas de tokens de Today lleva un marcador compacto — un punto verde cuando el valor está cerca de tu media reciente, una flecha ámbar cuando es claramente más alto. La ventana de comparación sigue tu ajuste de retención de datos de Claude, no un número fijo de días.',
+        body:  'Una barra de iconos a la izquierda cambia entre cuatro páginas.\n\nToday — tres anillos (ventana 5 h, hoy, esta semana), el mapa de actividad de la semana de facturación en curso, tu última acción y el desglose de tokens. Los anillos de la ventana de 5 horas y de la semana muestran un porcentaje solo si viene de Anthropic, con la hora de la lectura. Si no, se quedan grises y muestran los tokens contados y el tiempo hasta el reinicio. El anillo Hoy muestra un múltiplo de tu día habitual. Todo aquí es de hoy o de la semana en curso; lo que abarca más tiempo está deliberadamente en otro sitio.\n\nCalendario — los dos últimos meses como cuadrículas mensuales.\n\nAnalíticas — los resúmenes de 7 y N días como tarjetas KPI con minigráficos de tendencia, más la distribución por modelo.\n\nAjustes — los mismos ajustes que en la pestaña de configuración de Obsidian, sin salir de la barra lateral.\n\nEn la cabecera: Dashboard e Report generan archivos, CSV exporta a tu vault, y la flecha actualiza de inmediato.\n\nCada una de las cuatro filas de tokens de Today lleva un marcador compacto — un punto verde cuando el valor está cerca de tu media reciente, una flecha ámbar cuando es claramente más alto. La ventana de comparación sigue tu ajuste de retención de datos de Claude, no un número fijo de días.',
       },
       {
         title: 'Calendario de actividad',
@@ -1225,7 +1316,7 @@ const STRINGS = {
       },
       {
         title: 'Qué se mide',
-        body:  'Este plugin lee lo que Claude Code escribe en disco, así que cubre todas las formas de usar Claude Code: en una terminal, dentro de Obsidian, en un editor como VS Code y el modo agente integrado en la aplicación de escritorio de Claude. Todo acaba en los mismos números.\n\nLo que no puede mostrar es el chat normal — las conversaciones en la aplicación de escritorio de Claude o en claude.ai. Esas nunca escriben recuentos de tokens en tu máquina; la única señal de uso disponible allí es un porcentaje redondeado de tu límite actual, no los recuentos reales sobre los que se construye este plugin.\n\nAsí que si un día parece más intenso de lo que sugieren las cifras, esa suele ser la razón: tu uso del chat cuenta para el mismo límite del plan, pero no deja rastro local que medir. Conviene tenerlo en cuenta sobre todo para las estimaciones de límites, que solo pueden derivarse de la parte visible aquí.',
+        body:  'Este plugin lee lo que Claude Code escribe en disco, así que cubre todas las formas de usar Claude Code: en una terminal, dentro de Obsidian, en un editor como VS Code y el modo agente integrado en la aplicación de escritorio de Claude. Todo acaba en los mismos números.\n\nLo que no puede mostrar es el chat normal — las conversaciones en la aplicación de escritorio de Claude o en claude.ai. Esas nunca escriben recuentos de tokens en tu máquina; la única señal de uso disponible allí es un porcentaje redondeado de tu límite actual, no los recuentos reales sobre los que se construye este plugin.\n\nAsí que si un día parece más intenso de lo que sugieren las cifras, esa suele ser la razón: tu uso del chat cuenta para el mismo límite del plan, pero no deja rastro local que medir. También es una de las razones por las que el rango de tus límites alcanzados es amplio, y por las que solo los porcentajes oficiales dicen dónde estás realmente.',
       },
       {
         title: 'Archivo y datos a largo plazo',
@@ -1233,7 +1324,7 @@ const STRINGS = {
       },
       {
         title: 'Resumen de costes (aproximado, USD)',
-        body:  'Entrada:        ~3 $ / 1 M de tokens (Sonnet)\nSalida:         ~15 $ / 1 M de tokens\nC.Escritura:    ~3,75 $ / 1 M de tokens (+25 %)\nC.Lectura:      ~0,30 $ / 1 M de tokens (−90 %)\n\nEl precio real depende de tu plan y del modelo. Estas cifras muestran por qué un factor de reutilización alto reduce los costes de forma notable.\n\nCoste y límites son dos cosas distintas: los tokens de caché cuestan dinero pero no te acercan al límite de 5 horas ni al semanal — ver «Qué cuenta para un límite».',
+        body:  'Entrada:        ~3 $ / 1 M de tokens (Sonnet)\nSalida:         ~15 $ / 1 M de tokens\nC.Escritura:    ~3,75 $ / 1 M de tokens (+25 %)\nC.Lectura:      ~0,30 $ / 1 M de tokens (−90 %)\n\nEl precio real depende de tu plan y del modelo. Estas cifras muestran por qué un factor de reutilización alto reduce los costes de forma notable.\n\nCoste y límites son dos cosas distintas, pero la caché forma parte de ambos: las escrituras en caché cuentan claramente para los límites y las lecturas un poco (ver «Qué cuenta para un límite»). Una versión anterior de este texto decía que la caché no contaba en absoluto. Era incorrecto y está corregido en la 2.5.',
       },
     ],
   },
@@ -1253,7 +1344,9 @@ const STRINGS = {
 // rather than a shared one — the two live in different worlds (Node-side DOM vs. browser
 // template string) and the dashboard's version carries a glow filter this one does not need at
 // 44px. Colour comes in as a CSS variable so the ring follows the theme like everything else.
-function auRingSvg(pct, cssColor, size) {
+// `center` (2.5, optional): what stands in the middle instead of "NN%". Built only from numbers
+// and fixed strings inside the plugin ("2.5x", "≈23%", "–"), never from log data.
+function auRingSvg(pct, cssColor, size, center) {
   const s = size || 44;
   const stroke = 4.5;
   const r = (s - stroke) / 2 - 1;
@@ -1262,11 +1355,13 @@ function auRingSvg(pct, cssColor, size) {
   const mid = s / 2;
   return `<svg width="${s}" height="${s}" viewBox="0 0 ${s} ${s}" style="display:block">`
     + `<circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="var(--background-modifier-border)" stroke-width="${stroke}"/>`
-    + `<circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="${cssColor}" stroke-width="${stroke}"`
+    // No arc at all for 0 (2.5): a zero-length arc with round caps draws a dot at the top, which
+    // reads like a tiny value on the grey "no official value" ring.
+    + (dash > 0.05 ? `<circle cx="${mid}" cy="${mid}" r="${r}" fill="none" stroke="${cssColor}" stroke-width="${stroke}"`
     + ` stroke-dasharray="${dash.toFixed(1)} ${c.toFixed(1)}" stroke-linecap="round"`
-    + ` transform="rotate(-90 ${mid} ${mid})"/>`
+    + ` transform="rotate(-90 ${mid} ${mid})"/>` : '')
     + `<text x="${mid}" y="${mid + 3.6}" text-anchor="middle" font-size="11" font-weight="700"`
-    + ` fill="var(--text-normal)">${Math.round(pct)}<tspan font-size="7.5">%</tspan></text>`
+    + ` fill="var(--text-normal)">${center != null ? center : `${Math.round(pct)}<tspan font-size="7.5">%</tspan>`}</text>`
     + `</svg>`;
 }
 
@@ -1284,9 +1379,17 @@ const FIVE_H = 5 * 3_600_000;
 //
 // RFC 4180: quote a field only when it contains a quote, a comma or a line break, and escape
 // an inner quote by doubling it.
+//
+// 2.5 (security check 27.10.2026): a text cell that starts with = + - @ or a tab/CR would be run
+// as a formula by Excel and LibreOffice. Folder labels end up in these files, so such a cell gets
+// a leading apostrophe (OWASP "CSV injection"). Plain numbers, also as strings like "-5" or
+// "12.5%", stay as they are, because spreadsheets read those as numbers, not formulas.
+function csvSafeText(s) {
+  return (/^[=+\-@\t\r]/.test(s) && !/^[-+]?\d+([.,]\d+)?%?$/.test(s)) ? "'" + s : s;
+}
 function csvCellNode(v) {
   if (v === null || v === undefined) return '';
-  const s = String(v);
+  const s = typeof v === 'number' ? String(v) : csvSafeText(String(v));
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 function csvFromNode(rows) {
@@ -1366,6 +1469,11 @@ function readRateLimitFeed(sinceMs) {
       if (!o || typeof o.ts !== 'number' || o.session === 'test') continue;
       if (sinceMs && o.ts < sinceMs) continue;
       const r = { ts: o.ts, h5: conv(o.h5), wk: conv(o.wk) };
+      // 2.5: further windows Anthropic reports (for example a separate weekly limit for one
+      // model, Claude Code changelog 2.1.283), written by the 2.5 scripts under "more".
+      if (o.more && typeof o.more === 'object') {
+        for (const k of Object.keys(o.more)) { const c = conv(o.more[k]); if (c) (r.more = r.more || {})[k] = c; }
+      }
       if (r.h5 || r.wk) out.push(r);
     }
     return out.sort((a, b) => a.ts - b.ts);
@@ -1398,23 +1506,21 @@ function windowHeatBand(ratio) {
   return             'veryhigh';
 }
 
-// Band for one 2-hour slot (02.10.2026, Björn's bubble grid).
+// Band for one 2-hour slot (02.10.2026, Björn's bubble grid; reference changed in 2.5).
 //
-// The thresholds are derived, not picked. A 5-hour window holds 2.5 slots of two hours, so
-// spending the whole window budget at an even pace means 40% of it per slot — that is the pace
-// at which you arrive exactly at the wall as the window closes. Call that "full burn" and the
-// bands fall out of it: a quarter of that pace, half of it, up to it, and beyond it.
+// Up to 2.1 a slot was measured against the ESTIMATED 5h limit ("full burn": 40% of a 5h budget
+// per 2h slot). That estimate is gone in 2.5 ("percentages from Anthropic only"), so the slot is
+// now measured against the user's OWN usual 2-hour block (mean of all active 2h blocks over the
+// last 29 days), the same idea as the Today ring: half of usual, usual, twice usual, beyond.
 //
-// This matters because the obvious alternative — colouring each slot relative to the busiest
-// slot of the week — would make the busiest slot red every week, including a quiet one. Same
-// trap as the week bar on 01.10.: relative height wearing traffic-light colours.
-const SLOT_FULL_BURN = 0.40; // share of a 5h budget spent in one 2h slot at an even full burn
+// Still not relative to the busiest slot of the week — that would make the busiest slot red every
+// week, including a quiet one. Same trap as the week bar on 01.10.: relative height wearing
+// traffic-light colours.
+const SLOT_EDGES = [0.5, 1, 2];
 
-const SLOT_EDGES = [0.25, 0.5, 1];
-
-function slotHeatBand(slotTokens, sessionLimit) {
-  if (slotTokens <= 0 || !sessionLimit) return slotTokens > 0 ? 'low' : 'empty';
-  const pace = slotTokens / (sessionLimit * SLOT_FULL_BURN);
+function slotHeatBand(slotTokens, usualSlot) {
+  if (slotTokens <= 0 || !usualSlot) return slotTokens > 0 ? 'low' : 'empty';
+  const pace = slotTokens / usualSlot;
   if (pace < SLOT_EDGES[0]) return 'low';
   if (pace < SLOT_EDGES[1]) return 'medium';
   if (pace < SLOT_EDGES[2]) return 'high';
@@ -1430,14 +1536,14 @@ function slotHeatBand(slotTokens, sessionLimit) {
 // more solid, and no shade of one band can be mistaken for another band. It would NOT be safe to
 // map the shade to "share of the busiest cell this week", which is the relative-height trap the
 // week bar fell into on 01.10.
-function slotShade(slotTokens, sessionLimit) {
-  if (slotTokens <= 0 || !sessionLimit) return 1;
-  const pace = slotTokens / (sessionLimit * SLOT_FULL_BURN);
+function slotShade(slotTokens, usualSlot) {
+  if (slotTokens <= 0 || !usualSlot) return 1;
+  const pace = slotTokens / usualSlot;
   const lo = pace < SLOT_EDGES[0] ? 0 : pace < SLOT_EDGES[1] ? SLOT_EDGES[0]
            : pace < SLOT_EDGES[2] ? SLOT_EDGES[1] : SLOT_EDGES[2];
-  // The top band is open-ended; one further full-burn unit above the edge counts as its maximum.
+  // The top band is open-ended; twice its lower edge counts as its maximum.
   const hi = pace < SLOT_EDGES[0] ? SLOT_EDGES[0] : pace < SLOT_EDGES[1] ? SLOT_EDGES[1]
-           : pace < SLOT_EDGES[2] ? SLOT_EDGES[2] : SLOT_EDGES[2] + 1;
+           : pace < SLOT_EDGES[2] ? SLOT_EDGES[2] : SLOT_EDGES[2] * 2;
   const k = Math.max(0, Math.min(1, (pace - lo) / (hi - lo)));
   return 0.70 + 0.30 * k;
 }
@@ -1508,6 +1614,11 @@ function fmtDuration(ms) {
   const m = Math.floor((ms % 3_600_000) / 60_000);
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+// Same, with days once it is more than one (2.5, for the time to the weekly reset).
+function fmtDurationLong(ms) {
+  if (ms < 86_400_000) return fmtDuration(ms);
+  return `${Math.floor(ms / 86_400_000)}d ${Math.floor((ms % 86_400_000) / 3_600_000)}h`;
+}
 
 function dayStart(date) {
   const d = new Date(date); d.setHours(0, 0, 0, 0); return d.getTime();
@@ -1536,12 +1647,21 @@ function localeFor(lang) {
 // means what the user typed is what they see. If Anthropic's reset is UTC-fixed, the hour will
 // appear to shift by one after a DST change — which is exactly when the calibration hint
 // ("checked on …") should prompt a re-check.
+//
+// 2.5 (Björn's feed, 20.10.2026): Anthropic's reset IS fixed in UTC. After the switch to winter
+// time the feed announced Sunday 17:00 instead of 18:00 local, so a local "Sunday 18:00" put
+// every week boundary one hour off for half the year. Whenever the plugin knows one real reset
+// instant (from the official feed, or from the date in a weekly-limit message), it now steps
+// from that instant in exact seven-day strides (_resetAnchor). Only a hand-set reset stays in
+// local time, because that is what the user typed.
 let _resetDay  = 0;   // 0 = Sunday … 6 = Saturday
 let _resetHour = 18;  // local hour, 0–23
+let _resetAnchor = null; // ms, one known reset instant; null = local day/hour as before
 
-function setBillingWeekReset(day, hour) {
+function setBillingWeekReset(day, hour, anchorMs) {
   _resetDay  = (typeof day  === 'number' && day  >= 0 && day  <= 6)  ? day  : 0;
   _resetHour = (typeof hour === 'number' && hour >= 0 && hour <= 23) ? hour : 18;
+  _resetAnchor = (typeof anchorMs === 'number' && isFinite(anchorMs) && anchorMs > 0) ? anchorMs : null;
 }
 
 const _RESET_MONTHS = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
@@ -1590,8 +1710,13 @@ function parseWeeklyReset(text, eventTs) {
 }
 
 function billingWeekStart(tsMs) {
+  if (_resetAnchor !== null) {
+    const W = 7 * 86_400_000;
+    return _resetAnchor + Math.floor((tsMs - _resetAnchor) / W) * W;
+  }
   const dt = new Date(tsMs);
   // How many days back to the most recent reset weekday.
+  // (local day/hour path, only without a known reset instant)
   let dBack = (dt.getDay() - _resetDay + 7) % 7;
   // Standing exactly on the reset day but before the reset hour means the current week began
   // a full seven days earlier.
@@ -1600,6 +1725,13 @@ function billingWeekStart(tsMs) {
   s.setDate(dt.getDate() - dBack);
   s.setHours(_resetHour, 0, 0, 0);
   return s.getTime();
+}
+
+// The next weekly reset after tsMs (2.5). 169 hours past the current week's start always lands in
+// the following week, whether the week is 168 hours long (UTC anchor, or no DST change) or 167/169
+// (local day/hour across a DST change).
+function nextWeekReset(tsMs) {
+  return billingWeekStart(billingWeekStart(tsMs) + 169 * 3_600_000);
 }
 
 // Pure threshold lookup — returns only a semantic key, never a color or CSS class, so the same
@@ -1791,9 +1923,12 @@ function computeRateLimitEstimates(rateLimitEvents, entries30sorted, now, anchor
     weekBuckets.push({ label: wLabel, tokens: wTok, hitWeekly });
   }
   const weeklyHitWks = weekBuckets.filter(w => w.hitWeekly && w.tokens > 0);
-  const weeklyLimitEst = weeklyHitWks.length > 0
-    ? Math.min.apply(null, weeklyHitWks.map(w => w.tokens))
-    : null;
+  // 2.5 (Extra Usage, 20.10.2026): tokens up to the hit (tokWeek), not the whole week. With usage
+  // credits work goes on after the hit, and the whole-week total would count those credit tokens
+  // as part of the limit. No longer shown anywhere since 2.5 ("percentages from Anthropic only"),
+  // kept because it is part of the hit list and must not be wrong if it is ever read again.
+  const weeklyHitToks = rlEvents.filter(r => r.type === 'weekly' && r.tokWeek > 0).map(r => r.tokWeek);
+  const weeklyLimitEst = weeklyHitToks.length > 0 ? Math.min.apply(null, weeklyHitToks) : null;
   return {
     rlEvents, sessionEst, weeklyLimitEst, weekBuckets,
     weeklyHits:   weeklyHitWks.length,
@@ -1843,105 +1978,141 @@ function computeWeekStatus(entries30sorted, now, weeklyLimitEst, avgDailyFallbac
   };
 }
 
-// Limits anchored on the official percentages (09.10.2026, Björn's statusline test).
-// Anthropic publishes no limit in tokens, but the feed says how full each window is. Tokens in the
-// window up to a reading, divided by that reading's percentage, is the limit that window actually
-// had. At the moment of the reading the gauge then shows exactly the official figure, and between
-// readings it moves on with the logged tokens.
+// ── 2.5: percentages come from Anthropic only (Björn, 17./18.10.2026) ─────────────────────────
+// Up to 2.1 the plugin estimated a percentage for the 5h window and the week, from the user's own
+// limit hits or extrapolated from the feed. Eleven days of feed readings against the plugin
+// (06.–17.10.2026, 37 readings) showed the 5h estimate off by 36 points on average; at the moment
+// a window was officially full the ring stood anywhere between 61 and 217 percent. How fast a
+// window fills depends on how much context a session drags through the cache, which the local
+// logs cannot tell reliably. So the rule since 2.5:
 //
-// Why this replaced the hit-based figures where a feed exists: on 09.10.2026 the plugin showed
-// the week at 141% while /usage said 61%. The token count was right (1.61M), the denominator was
-// not: the lowest week that ever hit the cap (about 1.14M) against about 2.6M from the feed, which
-// stayed between 2.47M and 2.69M across every reading of that week.
+//   A percentage for a limit is shown only when Anthropic supplied it (the feed), always with the
+//   time of the reading. Without one, the plugin shows what it knows for certain: counted tokens,
+//   time to the reset, and the span at which the user's own 5h window has filled up so far.
 //
-// Readings below FEED_MIN_PCT are skipped: the feed carries whole percents, and at 5% the rounding
-// alone is worth plus or minus ten percent of the result.
+// One exception, the week (Björn, 18.10.2026: "Hochrechnung der Woche kann bleiben"): between two
+// readings the last official weekly value is carried forward with the tokens counted since, and
+// labelled as such. The weekly limit was the one stable quantity in the measurement (1.2 points
+// mean deviation). There is no carrying forward for the 5h window.
 //
-// Known limit: the 5h budget depends on the model. Opus took about 1.8K tokens per percent,
-// Sonnet about 3.8K (Björn's data, 06. to 09.10.2026). The current window's own reading carries
-// its own mix, so it is exact; the fallback median across recent windows is not model-aware.
+// How old a reading may be goes by relation, not by clock (Björn, 18.10.2026): a 5h reading
+// counts only inside the window it was taken in; a weekly reading inside its week. After a weekly
+// reset without a new reading the week is carried forward from 0 % with last week's limit,
+// labelled "since reset"; without a previous week from the feed it stays grey.
+//
+// Readings below FEED_MIN_PCT are not used to derive a weekly limit: the feed carries whole
+// percents, and at 5 % the rounding alone is worth plus or minus ten percent of the result.
+// Readings at or above 100 % are not used either, nor anything after them in the same week
+// (2.5, Extra Usage, 20.10.2026): with usage credits work goes on past the limit, and dividing
+// those extra tokens by "100 %" would make the derived limit grow with every credit token.
 const FEED_MIN_PCT = 10;
 const FEED_WEEK_MS = 7 * 86_400_000;
-function computeFeedCalibration(feed, entriesAsc, nowMs) {
-  const res = { readings: (feed || []).length, lastReading: null,
-    h5Limit: null, h5Source: null, h5Typical: null, h5Windows: 0, h5PctNow: null, weekLimit: null, weekSource: null };
-  if (!feed || !feed.length) return res;
+
+function computeOfficialLimits(feed, entriesAsc, nowMs) {
+  const res = { hasFeed: !!(feed && feed.length), lastReading: null, h5: null, wk: null, weekLimit: null, weekLimitSource: null };
+  if (!res.hasFeed) return res;
   res.lastReading = feed[feed.length - 1].ts;
   const sumBetween = (from, to) => {
     let s = 0;
     for (const e of entriesAsc) {
-      if (e.timestamp < from) continue;
+      if (e.timestamp <= from) continue;
       if (e.timestamp > to) break;
       s += billedEntry(e);
     }
     return s;
   };
-  // Last usable reading per window: the highest one, never several from the same window.
-  const perWindow = (key, span) => {
-    const by = new Map();
-    for (const r of feed) {
-      const x = r[key];
-      if (!x || x.pct < FEED_MIN_PCT) continue;
-      const c = by.get(x.resets);
-      if (!c || r.ts > c.ts) by.set(x.resets, { ts: r.ts, pct: x.pct, resets: x.resets });
-    }
-    return [...by.values()].sort((a, b) => a.resets - b.resets).map(w => {
-      const tok = sumBetween(w.resets - span, w.ts);
-      return Object.assign(w, { tok, limit: tok > 0 ? tok / (w.pct / 100) : 0 });
-    }).filter(w => w.limit > 0);
-  };
-  const h5 = perWindow('h5', FIVE_H);
-  // Typical rate (tokens per 100%) from CLOSED windows only, so the open window cannot pull it.
-  const recent = h5.filter(w => w.resets <= nowMs && w.resets > nowMs - 14 * 86_400_000).map(w => w.limit).sort((a, b) => a - b);
-  res.h5Windows = recent.length;
-  res.h5Typical = recent.length ? Math.round(recent[Math.floor(recent.length / 2)]) : null;
-  // Current window: the official reading is the base, new tokens are added on top at the typical
-  // rate (fixed 09.10.2026, 16:52). Scaling the reading by its own tokens instead broke at the start
-  // of a window: after a pause the cache had expired, the session re-wrote 258.6K of context into
-  // it, and the official figure jumped to 17% on just 4.4K input+output. Divided out, that is a
-  // "limit" of about 26K, and every following answer would have counted several times over.
-  // Cache writes are front-loaded and the plugin does not count them, so the reading carries them.
-  let curR = null;
+
+  // ---- 5h: only a reading from the window that is open right now ----------------------------
+  let lastH5 = null;
+  for (const r of feed) if (r.h5 && (!lastH5 || r.ts > lastH5.ts)) lastH5 = r;
+  if (lastH5) {
+    const start = lastH5.h5.resets - FIVE_H;
+    const open  = start <= nowMs && nowMs < lastH5.h5.resets;
+    res.h5 = open
+      ? { state: 'official', pct: lastH5.h5.pct, readAt: lastH5.ts, start, resets: lastH5.h5.resets,
+          tokSince: sumBetween(Math.max(start, lastH5.ts), nowMs) }
+      : { state: 'stale', readAt: lastH5.ts, pct: lastH5.h5.pct };
+  }
+
+  // ---- week: limit per week from its own readings, cut at the first reading of 100 % --------
+  const byWeek = new Map();
   for (const r of feed) {
-    if (r.h5 && r.h5.resets - FIVE_H <= nowMs && nowMs < r.h5.resets && (!curR || r.ts > curR.ts)) curR = r;
+    if (!r.wk) continue;
+    if (!byWeek.has(r.wk.resets)) byWeek.set(r.wk.resets, []);
+    byWeek.get(r.wk.resets).push(r);
   }
-  if (curR) {
-    const start = curR.h5.resets - FIVE_H;
-    const ioAt  = sumBetween(start, curR.ts);
-    const ioNow = sumBetween(start, nowMs);
-    const rate  = res.h5Typical || (curR.h5.pct >= FEED_MIN_PCT && ioAt > 0 ? ioAt / (curR.h5.pct / 100) : null);
-    if (rate) {
-      const pctNow = curR.h5.pct + Math.max(0, ioNow - ioAt) / rate * 100;
-      res.h5PctNow = pctNow;
-      // Expressed as an effective limit so every display keeps computing value / limit unchanged.
-      if (ioNow > 0 && pctNow > 0) { res.h5Limit = Math.round(ioNow / (pctNow / 100)); res.h5Source = 'feed-window'; }
+  const weeks = [...byWeek.entries()].sort((a, b) => a[0] - b[0]).map(([resets, rs]) => {
+    rs.sort((a, b) => a.ts - b.ts);
+    const cut = rs.findIndex(r => r.wk.pct >= 100);
+    const usable = (cut < 0 ? rs : rs.slice(0, cut)).filter(r => r.wk.pct >= FEED_MIN_PCT);
+    const base = usable[usable.length - 1] || null;
+    const tok = base ? sumBetween(resets - FEED_WEEK_MS, base.ts) : 0;
+    return { resets, readings: rs, last: rs[rs.length - 1], hitAt: cut >= 0 ? rs[cut].ts : null,
+      limit: (base && tok > 0) ? Math.round(tok / (base.wk.pct / 100)) : null };
+  });
+  const cur  = weeks.find(w => w.resets - FEED_WEEK_MS <= nowMs && nowMs < w.resets) || null;
+  // Last week's limit: the newest finished week with a usable limit, at most three weeks back.
+  const prev = weeks.filter(w => w.resets <= nowMs && w.resets > nowMs - 3 * FEED_WEEK_MS && w.limit).pop() || null;
+  res.weekLimit       = (cur && cur.limit) || (prev && prev.limit) || null;
+  res.weekLimitSource = (cur && cur.limit) ? 'feed-week' : (prev && prev.limit ? 'feed-lastweek' : null);
+
+  if (cur) {
+    const r = cur.last;
+    if (r.wk.pct >= 100 || cur.hitAt) {
+      // Limit reached this week: show the official figure as it is. Anything after it runs on
+      // usage credits and is not part of the weekly limit, so it is not carried forward.
+      res.wk = { state: 'official', pct: r.wk.pct, readAt: r.ts, resets: cur.resets, tokSince: 0, reached: true };
+    } else {
+      const tokSince = sumBetween(r.ts, nowMs);
+      const lim = res.weekLimit;
+      res.wk = (lim && tokSince > 0)
+        ? { state: 'projected', pct: r.wk.pct + tokSince / lim * 100, basePct: r.wk.pct, readAt: r.ts, resets: cur.resets, tokSince }
+        : { state: 'official', pct: r.wk.pct, readAt: r.ts, resets: cur.resets, tokSince };
+    }
+  } else if (prev) {
+    // New week, no reading in it yet: from 0 % with last week's limit, labelled "since reset".
+    const wkStart = billingWeekStart(nowMs);
+    const tok = sumBetween(wkStart, nowMs);
+    res.wk = { state: 'sinceReset', pct: tok / prev.limit * 100, resets: wkStart + FEED_WEEK_MS, tokSince: tok };
+  } else if (weeks.length) {
+    res.wk = { state: 'stale', readAt: weeks[weeks.length - 1].last.ts };
+  }
+
+  // ---- further official windows (2.5): the newest reading per window that is still running ----
+  const more = new Map();
+  for (const r of feed) {
+    if (!r.more) continue;
+    for (const k of Object.keys(r.more)) {
+      const x = r.more[k];
+      if (x.resets > nowMs && (!more.has(k) || r.ts > more.get(k).readAt)) more.set(k, { key: k, pct: x.pct, resets: x.resets, readAt: r.ts });
     }
   }
-  if (!res.h5Limit && res.h5Typical) { res.h5Limit = res.h5Typical; res.h5Source = 'feed-median'; }
-  const wk = perWindow('wk', FEED_WEEK_MS).filter(w => w.resets > nowMs - 3 * FEED_WEEK_MS);
-  const curW = wk.find(w => w.resets - FEED_WEEK_MS <= nowMs && nowMs < w.resets);
-  const pickW = curW || wk[wk.length - 1];
-  if (pickW) { res.weekLimit = Math.round(pickW.limit); res.weekSource = curW ? 'feed-week' : 'feed-lastweek'; }
+  res.more = [...more.values()];
   return res;
 }
 
+// Readable name for a further window from the feed ("seven_day_fable" -> "Fable", weekly).
+function moreWindowName(key) {
+  const m = /^seven_day_(.+)$/.exec(key || '');
+  const raw = m ? m[1] : String(key || '');
+  return { name: raw.charAt(0).toUpperCase() + raw.slice(1).replace(/_/g, ' '), weekly: !!m };
+}
+
 // Everything limit-shaped in one place, for the sidebar and the Dashboard alike, so the two can
-// never show different numbers for the same thing. The feed wins where it has a value; otherwise
-// the hit-based estimates apply unchanged.
+// never show different numbers for the same thing. Since 2.5 there is no estimated limit in here
+// any more: official values (with the time of the reading), the labelled weekly projection,
+// counted tokens, and the span of the user's own 5h-limit hits.
 function computeLimitState(rateLimitEvents, entriesAsc, nowDate, avgDailyFallback, feed) {
-  const anchors      = feedWindowAnchors(feed);
-  const rlEst        = computeRateLimitEstimates(rateLimitEvents, entriesAsc, nowDate, anchors);
-  const cal          = computeFeedCalibration(feed, entriesAsc, nowDate.getTime());
-  const hitMedian    = (rlEst.sessionEst && rlEst.sessionEst.median) || 0;
-  const weeklyLimit  = cal.weekLimit || rlEst.weeklyLimitEst || null;
-  const weeklySource = cal.weekLimit ? 'feed' : (rlEst.weeklyLimitEst ? 'hits' : null);
-  const h5Limit      = cal.h5Limit || hitMedian || 0;
-  const h5Source     = cal.h5Limit ? 'feed' : (hitMedian ? 'hits' : null);
-  // The figure to SHOW as "the 5h limit" (basis line, heatmap pace). h5Limit is the effective limit
-  // of the open window and can be small right after a cache re-write; this one is the usual size.
-  const h5Typical    = cal.h5Typical || hitMedian || h5Limit || 0;
-  const weekStatus   = computeWeekStatus(entriesAsc, nowDate, weeklyLimit, avgDailyFallback);
-  return { anchors, rlEst, cal, weeklyLimit, weeklySource, h5Limit, h5Source, h5Typical, weekStatus };
+  const anchors    = feedWindowAnchors(feed);
+  const rlEst      = computeRateLimitEstimates(rateLimitEvents, entriesAsc, nowDate, anchors);
+  const official   = computeOfficialLimits(feed, entriesAsc, nowDate.getTime());
+  // The span (Björn, 18.10.2026: "Die Spanne ist fein und macht das klarer"): the full range of
+  // tokens at which the 5h window was full, not the middle half. With the feed the windows start
+  // where Anthropic says they did; without it they are rebuilt from the logs.
+  const se         = rlEst.sessionEst;
+  const span       = se ? { n: se.n, min: se.min, max: se.max, anchored: anchors.length > 0 } : null;
+  const weekStatus = computeWeekStatus(entriesAsc, nowDate, official.weekLimit, avgDailyFallback);
+  return { anchors, rlEst, official, span, weekLimit: official.weekLimit, weekLimitSource: official.weekLimitSource, weekStatus };
 }
 
 function aggregate(entries) {
@@ -1978,6 +2149,12 @@ function groupByDay(entries, nDays) {
       total:   agg.billed,
       input:   agg.input,
       output:  agg.output,
+      // 2.5 (28.10.2026): the Analytics tiles read `billed` and `reqs` per day, the same fields
+      // periodSeries carries. This 7-day series never had `reqs` (Calls and Active Days sparklines
+      // flat since 1.8.0) and lost its input+output reading when the tiles switched to `billed` in
+      // 2.0 (Total and Avg sparklines flat since then). Found on the 2.5 listing screenshots.
+      billed:  agg.billed,
+      reqs:    agg.count,
     });
   }
   return result;
@@ -2405,7 +2582,11 @@ class AnthropicUsageView extends obsidian.ItemView {
       // applies to this very refresh rather than only the next one.
       // Only overwrites an automatic value, never a manual one — if the user has set the reset
       // by hand, that is a deliberate statement and wins over our parsing.
-      this._autoCalibrateWeeklyReset(allRateLimitEvents);
+      // Official windows from the status line feed, if the user has one (09.10.2026). Read once
+      // per refresh; an empty list leaves every calculation below exactly as it was. Read before
+      // the calibration since 2.5, because the feed also carries the exact weekly reset instant.
+      const rlFeed   = readRateLimitFeed(day30Ts);
+      this._autoCalibrateWeeklyReset(allRateLimitEvents, rlFeed);
 
       const d7       = all.filter(e => e.timestamp >= day7Ts);
       // Anchored, not sliding (fix 02.10.2026, Björn). Anthropic's 5-hour window OPENS with the
@@ -2423,9 +2604,6 @@ class AnthropicUsageView extends obsidian.ItemView {
       // 23:30 the sliding version summed 18:30–23:30, the tail of the old window plus the head
       // of the new one. That is precisely the moment a user needs to see that their budget just
       // reset, and it was the moment the figure was most wrong.
-      // Official windows from the status line feed, if the user has one (09.10.2026). Read once
-      // per refresh; an empty list leaves every calculation below exactly as it was.
-      const rlFeed   = readRateLimitFeed(day30Ts);
       const curWin   = currentWindow5h(all, now, feedWindowAnchors(rlFeed));
       const win5h    = curWin ? all.filter(e => e.timestamp >= curWin.start && e.timestamp < curWin.end) : [];
       const win5hAgg = aggregate(win5h);
@@ -2445,6 +2623,17 @@ class AnthropicUsageView extends obsidian.ItemView {
       const activeDays    = new Set(past29.map(e => dayStart(new Date(e.timestamp)))).size;
       const past29Total   = past29.reduce((s, e) => s + billedEntry(e), 0);
       const avgDaily      = activeDays > 0 ? past29Total / activeDays : 0;
+      // 2.5: the heatmap measures each 2-hour cell against the user's own usual 2-hour block, the
+      // mean of all 2-hour blocks with activity over the same days as avgDaily. Up to 2.1 it was
+      // measured against the estimated 5h limit, which no longer exists.
+      const slotSums = new Map();
+      for (const e of past29) {
+        const dt = new Date(e.timestamp);
+        const k = dayStart(dt) + Math.floor(dt.getHours() / 2);
+        slotSums.set(k, (slotSums.get(k) || 0) + billedEntry(e));
+      }
+      const slotVals = [...slotSums.values()].filter(v => v > 0);
+      const slotAvg  = slotVals.length ? slotVals.reduce((a, b) => a + b, 0) / slotVals.length : 0;
       const spikeRatio    = (avgDaily > 0 && todayTotal > 0) ? Math.round(todayTotal / avgDaily * 10) / 10 : 0;
 
       // Community-requested "outlier" signal (Obsidian Forum, shipped as the Today spike badge
@@ -2494,6 +2683,7 @@ class AnthropicUsageView extends obsidian.ItemView {
         sessionStart: sessionEntries.length > 0 ? Math.min(...sessionEntries.map(e => e.timestamp)) : null,
         today:        todayAgg,
         avgDaily,
+        slotAvg,
         spikeRatio,
         spikeRatioWeek,
         spikeRatioByType,
@@ -2543,13 +2733,14 @@ class AnthropicUsageView extends obsidian.ItemView {
           // Effective limits (09.10.2026): from the status line feed where it has a value,
           // otherwise the hit-based estimates. `*Source` says which ('feed' | 'hits' | null);
           // the hit-based weekly figure stays available as weeklyLimitHits for comparison.
-          weeklyLimitEst:  limits.weeklyLimit,
-          weeklySource:    limits.weeklySource,
-          weeklyLimitHits: rlEst.weeklyLimitEst,
-          h5Limit:         limits.h5Limit,
-          h5Typical:       limits.h5Typical,
-          h5Source:        limits.h5Source,
-          feedCal:         limits.cal,
+          // 2.5: official values with the time of the reading, the labelled weekly projection,
+          // the weekly limit as the feed implies it (feed only), and the span of 5h hits.
+          official:        limits.official,
+          span:            limits.span,
+          weekLimit:       limits.weekLimit,
+          weekLimitSource: limits.weekLimitSource,
+          windowEnd:       curWin ? curWin.end : null,
+          weekResetAt:     nextWeekReset(now),
           weekSoFar:      weekStatus.soFar,
           remainingDays:  weekStatus.remainingDays,
           sessionEst:     rlEst.sessionEst,
@@ -2606,8 +2797,29 @@ class AnthropicUsageView extends obsidian.ItemView {
   // Reads the weekly reset out of the newest weekly-limit message and stores it, unless the
   // user has set it manually. Silent by design: nothing to confirm, nothing to click — the
   // settings page shows afterwards that it was detected and from which hit.
-  _autoCalibrateWeeklyReset(events) {
+  _autoCalibrateWeeklyReset(events, feed) {
     const s = this.plugin.settings;
+
+    // 2.5: the official feed names the next weekly reset to the second (`wk.resets`). It is the
+    // most exact source there is, so it comes first. Same rule as for a parsed message: a manual
+    // setting the feed contradicts stays untouched, one it confirms is relabelled.
+    const lastWk = [...(feed || [])].reverse().find(r => r.wk && r.wk.resets);
+    if (lastWk) {
+      const at = new Date(lastWk.wk.resets);
+      const fDay = at.getDay(), fHour = at.getHours();
+      const same = s.weeklyResetDay === fDay && s.weeklyResetHour === fHour;
+      if (s.weeklyResetSource === 'manual' && !same) return;
+      if (s.weeklyResetSource === 'feed' && same && s.weeklyResetAt === lastWk.wk.resets) return;
+      s.weeklyResetDay    = fDay;
+      s.weeklyResetHour   = fHour;
+      s.weeklyResetSource = 'feed';
+      s.weeklyResetAt     = lastWk.wk.resets;
+      s.weeklyResetSetAt  = new Date().toISOString();
+      s.weeklyResetFrom   = lastWk.ts;  // which reading it came from, shown in settings
+      setBillingWeekReset(fDay, fHour, lastWk.wk.resets);
+      this.plugin.saveSettings();
+      return;
+    }
 
     const weekly = (events || [])
       .filter(e => e.type === 'weekly' && e.message)
@@ -2617,6 +2829,8 @@ class AnthropicUsageView extends obsidian.ItemView {
     const parsed = parseWeeklyReset(weekly[0].message, weekly[0].timestamp);
     if (!parsed) return;
 
+    // A feed value outranks a parsed message. Once the feed has stopped (older than the reading
+    // window), the parsed message takes over again below.
     const sameAsStored = s.weeklyResetDay === parsed.day && s.weeklyResetHour === parsed.hour;
 
     // A manual setting that the data contradicts stays untouched — the user had a reason, and
@@ -2626,14 +2840,15 @@ class AnthropicUsageView extends obsidian.ItemView {
     if (s.weeklyResetSource === 'manual' && !sameAsStored) return;
 
     // Already detected and unchanged — nothing to write, no settings churn on every refresh.
-    if (sameAsStored && s.weeklyResetSource === 'auto') return;
+    if (sameAsStored && s.weeklyResetSource === 'auto' && s.weeklyResetAt === parsed.at) return;
 
     s.weeklyResetDay    = parsed.day;
     s.weeklyResetHour   = parsed.hour;
     s.weeklyResetSource = 'auto';
+    s.weeklyResetAt     = parsed.at;  // 2.5: the real instant, so the week steps in UTC-exact strides
     s.weeklyResetSetAt  = new Date().toISOString();
     s.weeklyResetFrom   = weekly[0].timestamp;  // which hit it came from, shown in settings
-    setBillingWeekReset(parsed.day, parsed.hour);
+    setBillingWeekReset(parsed.day, parsed.hour, parsed.at);
     this.plugin.saveSettings();
   }
 
@@ -2821,124 +3036,117 @@ class AnthropicUsageView extends obsidian.ItemView {
     }
   }
 
-  // Today page (was "Overview" in the first revision, renamed) = Last Action + 5h Window +
-  // This Session + Today — verbatim the same content and renderers Classic uses for these
-  // (_renderWindow5h/_renderPeriod/_renderPeriodToday), just moved here so they only show on
-  // this one page instead of always inline. Default landing page in NextGen mode.
-  // Sidebar "Limit Pulse" — Today vs. the user own recent average, and this week vs. the
-  // weekly limit, and this billing week's total vs. that same weekly-limit estimate. Deliberately
-  // the very first thing on the Today page (Björn: "sofort mit einem Blick sehen"), reusing
-  // computeRateLimitEstimates()/computeWeekStatus() so the numbers can never drift from the
-  // Dashboard's Limit Hero — same source, same math, just a more compact presentation.
+  // "Right Now" (2.5, "percentages from Anthropic only"). Three rings: the 5h window, Today and the
+  // week. A ring carries a percentage only when it came from Anthropic (the feed), always with the
+  // time of the reading; the week may be carried forward between readings and says so. Without an
+  // official value a ring stays grey and empty and shows what is counted: tokens and the time to the
+  // reset. Today is no limit, it shows a multiple of the user's usual day. Underneath: the span at
+  // which the user's 5h window has filled up so far, and, without a feed, how to get one.
   _renderLimitPulse(parent, d) {
-    const wp = d.weekPulse || {};
+    const wp  = d.weekPulse || {};
+    const off = wp.official || {};
+    const loc = localeFor(_lang);
     const { body } = this._makeSection(parent, 'limitPulse', t('limitPulseTitle'));
-    if (!wp.weeklyLimitEst) {
-      body.createEl('div', { cls: 'au-section-sub', text: t('limitPulseNoWeekly') });
-      return;
-    }
-    // No daily quota exists (Björn, 01.10.2026). Anthropic enforces an anchored 5-hour window and
-    // a weekly cap — nothing in between. The old "fair daily share" (weeklyLimitEst / 7) was an
-    // invention of ours, and measuring a real day against an imaginary budget produced a verdict
-    // that looked authoritative while standing on nothing.
-    // Today is therefore compared against the user's OWN 29-day average per active day — the
-    // same baseline the heatmap, the calendar dots and the Today verdict glyphs already use. It
-    // claims no limit; it says "busier or quieter than you usually are".
-    const dailyBase  = d.avgDaily || 0;
-    const todayTotal = wp.todayTotal || 0;
-    // The 5h window is the limit that actually stops work mid-task, so it leads. Its target is
-    // the median of the user's own observed session-limit hits — the same figure the Dashboard's
-    // Limit Hero uses. Median rather than min, because the lowest hit ever seen is an outlier,
-    // not a ceiling. Null until a hit has been observed; then the panel shows the raw figure and
-    // claims nothing, same as the weekly one does before its first hit.
-    // Since 09.10.2026 the status line feed wins where it has a value (wp.h5Source === 'feed'):
-    // the limit then comes from the official percentage, not from the median of hits.
-    const sessBase = wp.h5Limit || (wp.sessionEst && wp.sessionEst.median) || 0;
-    const h5Feed   = wp.h5Source === 'feed';
-    // Shown figure: the usual 5h limit. sessBase is the open window's effective limit and can be
-    // far smaller right after a cache re-write, so it drives the ring but is not printed.
-    const sessShow = (h5Feed && wp.h5Typical) ? wp.h5Typical : sessBase;
-    const sessNote = sessBase <= 0 ? ''
-      : h5Feed ? t('limitPulseBasisFeed').replace('{v}', fmtTokens(sessShow))
-      : (wp.sessionEst ? t('limitPulseBasis', wp.sessionEst.n).replace('{v}', fmtTokens(sessBase)) : '');
-    const weekNote = (wp.weeklySource === 'feed' && wp.weeklyLimitEst)
-      ? t('limitPulseWeekFeed').replace('{v}', fmtTokens(wp.weeklyLimitEst)) : '';
-    // The two panels need DIFFERENT bands, because they answer different questions.
-    // Against a limit, 100% is the ceiling — 80% already deserves a warning.
-    // Against your own average, 100% is a perfectly ordinary day. Applying the limit bands
-    // there would paint every normal day red. 1.5x is "busier than usual", 2x is the spike
-    // threshold the rest of the plugin already uses.
+    const now = Date.now();
+    const at = (ms) => {
+      const x = new Date(ms);
+      const hm = x.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
+      return dayStart(x) === dayStart(new Date()) ? hm : x.toLocaleDateString(loc, { weekday: 'short' }) + ' ' + hm;
+    };
     const LIMIT_BANDS = [
       { upTo: 80,       key: 'good' },
       { upTo: 100,      key: 'warn' },
       { upTo: Infinity, key: 'bad'  },
     ];
-    const AVERAGE_BANDS = [
-      { upTo: 150,      key: 'good' },
-      { upTo: 200,      key: 'warn' },
-      { upTo: Infinity, key: 'bad'  },
-    ];
-    const items = [
-      { lbl: t('limitPulse5h'),    val: wp.window5h,  target: sessBase,          subKey: 'limitPulseOf5h',     bands: LIMIT_BANDS,
-        note: sessNote, plainTip: h5Feed },
-      // Neutral colour (Björn, 09.10.2026): Today is no limit, a busy day is only a change in how
-      // you work. Green/amber/red here read like a limit warning next to two real limits.
-      { lbl: t('limitPulseToday'), val: todayTotal,   target: dailyBase,         subKey: 'limitPulseOfDaily',  bands: AVERAGE_BANDS, neutral: true },
-      { lbl: t('limitPulseWeek'),  val: wp.weekSoFar, target: wp.weeklyLimitEst, subKey: 'limitPulseOfWeekly', bands: LIMIT_BANDS,
-        note: weekNote },
-    ];
+    const colorOf = (v) => v === 'neutral' ? 'var(--au-gray)' : `var(--au-${v === 'bad' ? 'crit' : v})`;
+
+    const items = [];
+
+    // ---- 5h window ----------------------------------------------------------------------------
+    const h5 = off.h5;
+    const h5Reset = wp.windowEnd && wp.windowEnd > now ? t('pulseResetIn', fmtDuration(wp.windowEnd - now)) : '';
+    if (h5 && h5.state === 'official') {
+      items.push({ lbl: t('limitPulse5h'), val: wp.window5h, pct: h5.pct, verdict: bandedVerdict(h5.pct, LIMIT_BANDS),
+        center: `${Math.round(h5.pct)}<tspan font-size="7.5">%</tspan>`,
+        lines: [t('pulseRead', at(h5.readAt))].concat(h5.tokSince > 0 ? [t('pulseSince', fmtTokens(h5.tokSince))] : []),
+        tip: t('pulseTip5h', Math.round(h5.pct), at(h5.readAt), fmtTokens(h5.tokSince || 0)) });
+    } else {
+      items.push({ lbl: t('limitPulse5h'), val: wp.window5h, pct: 0, verdict: 'neutral', center: '–', empty: true,
+        lines: [off.hasFeed ? t('pulseNoReading5h') : t('pulseNoFeed')].concat(h5Reset ? [h5Reset] : []),
+        tip: off.hasFeed ? t('pulseNoReading5h') : t('pulseTipNoFeed') });
+    }
+
+    // ---- Today: a multiple of the usual day, never a percentage -------------------------------
+    const dailyBase = d.avgDaily || 0;
+    const todayTotal = wp.todayTotal || 0;
+    if (dailyBase > 0) {
+      const x = todayTotal / dailyBase;
+      const xs = x.toLocaleString(loc, { maximumFractionDigits: 1, minimumFractionDigits: x > 0 && x < 10 ? 1 : 0 });
+      items.push({ lbl: t('limitPulseToday'), val: todayTotal, pct: Math.min(100, x * 100), verdict: 'neutral',
+        center: `${xs}<tspan font-size="7.5">x</tspan>`, lines: [t('pulseUsual', xs)],
+        tip: `${fmtTokens(todayTotal)} / ${fmtTokens(Math.round(dailyBase))}\n${t('pulseTipToday')}` });
+    } else {
+      items.push({ lbl: t('limitPulseToday'), val: todayTotal, pct: 0, verdict: 'neutral', center: '–', empty: true, lines: [], tip: '' });
+    }
+
+    // ---- Week ---------------------------------------------------------------------------------
+    const wk = off.wk;
+    const wkReset = wp.weekResetAt && wp.weekResetAt > now ? t('pulseResetIn', fmtDurationLong(wp.weekResetAt - now)) : '';
+    if (wk && (wk.state === 'official' || wk.state === 'projected' || wk.state === 'sinceReset')) {
+      const approx = wk.state !== 'official';
+      const lines = wk.state === 'official'
+        ? [wk.reached ? t('pulseReached') : t('pulseRead', at(wk.readAt))]
+        : wk.state === 'projected'
+          ? [t('pulseProjected'), t('pulseOfficialAt', Math.round(wk.basePct), at(wk.readAt))]
+          : [t('pulseSinceReset')];
+      items.push({ lbl: t('limitPulseWeek'), val: wp.weekSoFar, pct: wk.pct, verdict: bandedVerdict(wk.pct, LIMIT_BANDS),
+        center: `${approx ? '≈' : ''}${Math.round(wk.pct)}<tspan font-size="7.5">%</tspan>`, lines,
+        tip: wk.state === 'projected'
+          ? t('pulseTipWkProjected', Math.round(wk.basePct), at(wk.readAt), fmtTokens(wk.tokSince), fmtTokens(wp.weekLimit))
+          : wk.state === 'sinceReset' ? t('pulseTipWkSinceReset', fmtTokens(wp.weekLimit))
+          : t('pulseTipWkOfficial', Math.round(wk.pct), at(wk.readAt)) });
+    } else {
+      items.push({ lbl: t('limitPulseWeek'), val: wp.weekSoFar, pct: 0, verdict: 'neutral', center: '–', empty: true,
+        lines: [off.hasFeed ? t('pulseNoReadingWk') : t('pulseNoFeed')].concat(wkReset ? [wkReset] : []),
+        tip: off.hasFeed ? t('pulseNoReadingWk') : t('pulseTipNoFeed') });
+    }
+
     const row = body.createEl('div', { cls: 'au-pulse-row' });
     for (const it of items) {
-      // No baseline yet (fresh install, no active days) — show the raw figure, claim nothing.
-      if (!it.target) {
-        const item0 = row.createEl('div', { cls: 'au-pulse-item' });
-        item0.createEl('div', { cls: 'au-pulse-lbl', text: it.lbl });
-        item0.createEl('div', { cls: 'au-pulse-val', text: fmtTokens(it.val) });
-        continue;
-      }
-      const pct = Math.round((it.val / it.target) * 100);
-      const verdict = it.neutral ? 'neutral' : bandedVerdict(pct, it.bands);
-      const item = row.createEl('div', { cls: 'au-pulse-item' });
+      const item = row.createEl('div', { cls: 'au-pulse-item' + (it.empty ? ' is-unofficial' : '') });
       item.createEl('div', { cls: 'au-pulse-lbl', text: it.lbl });
-      // Compact ring (v2.0) — the sidebar's version of the dashboard's budget rings, scaled to
-      // a 300px panel. Built as a plain SVG string via innerHTML, the same approach the sidebar
-      // already uses for LOGO_SVG and the Overview sparklines.
       const ringWrap = item.createEl('div', { cls: 'au-pulse-ring' });
-      ringWrap.innerHTML = auRingSvg(pct, verdict === 'neutral' ? 'var(--au-gray)' : `var(--au-${verdict === 'bad' ? 'crit' : verdict})`);
-      item.createEl('div', { cls: `au-pulse-val au-pulse-val-${verdict}`, text: fmtTokens(it.val) });
-      item.createEl('div', { cls: 'au-pulse-pct', text: t(it.subKey, pct) });
-      // Name the denominator (Björn, 02.10.2026: "wo zeigen wir den gemessenen Median?"). The
-      // panels printed a percentage of a number the sidebar never stated anywhere — fine as long
-      // as you trust it, useless the moment you want to check it. Tooltip rather than a fourth
-      // line, because three tiles in a 300px panel have no room for one.
-      // plainTip: with the feed, the 5h target is an effective limit, not a figure worth printing.
-      item.title = (it.plainTip ? `${fmtTokens(it.val)} · ${pct}%` : `${fmtTokens(it.val)} / ${fmtTokens(it.target)}`)
-        + (it.note ? `\n${it.note}` : '');
+      ringWrap.innerHTML = auRingSvg(it.pct, colorOf(it.verdict), 44, it.center);
+      item.createEl('div', { cls: `au-pulse-val au-pulse-val-${it.verdict}`, text: fmtTokens(it.val) });
+      for (const ln of it.lines) item.createEl('div', { cls: 'au-pulse-pct', text: ln });
+      item.title = `${fmtTokens(it.val)}` + (it.tip ? `\n${it.tip}` : '');
     }
-    // The long explanation that used to sit here moved into the glossary (Björn, 02.10.2026:
-    // "das ist zuviel Text"). It also carried a hard-coded hit count from one analysis, which
-    // contradicted the live figure on the line below — see the Limits section in the help panel.
-    // The 5h estimate in full, in words: the number every ring and every heatmap cell on this
-    // page is measured against. Only shown once a hit has actually been observed.
-    //
-    // The value is its own element so it can be styled (Björn, 02.10.2026: bold, the figure red
-    // and underlined, centred). The translations carry a {v} placeholder rather than taking the
-    // formatted number as an argument — the figure sits in a different position in each language,
-    // and splitting on a placeholder survives that, while assuming a fixed position would not.
-    if (sessBase > 0 && (h5Feed || wp.sessionEst)) {
-      const parts = (h5Feed ? t('limitPulseBasisFeed') : t('limitPulseBasis', wp.sessionEst.n)).split('{v}');
-      const basis = body.createEl('div', { cls: 'au-section-sub au-pulse-basis' });
-      basis.createSpan({ text: parts[0] });
-      basis.createSpan({ cls: 'au-pulse-basis-val', text: fmtTokens(sessShow) });
-      if (parts[1]) basis.createSpan({ text: parts[1] });
-      // The band underneath, in plain muted text: the median is the reference, this line says
-      // how much that reference wobbles. Skipped while there are too few hits for a band, and
-      // when the figure comes from the feed (the band describes hits, not that figure).
-      const se = wp.sessionEst;
-      if (!h5Feed && se && se.bandLow && se.bandHigh) {
-        body.createEl('div', { cls: 'au-section-sub au-pulse-band',
-          text: t('limitPulseBand', fmtTokens(se.bandLow), fmtTokens(se.bandHigh)) });
-      }
+
+    // ---- Further official windows, only if Anthropic reports them (e.g. a Fable weekly limit) ---
+    for (const x of (off.more || [])) {
+      const nm = moreWindowName(x.key);
+      body.createEl('div', { cls: 'au-section-sub au-pulse-basis',
+        text: t(nm.weekly ? 'pulseMoreWeekly' : 'pulseMore', nm.name, Math.round(x.pct), at(x.readAt)) });
+    }
+
+    // ---- Span of the user's own 5h hits ------------------------------------------------------
+    const sp = wp.span;
+    if (sp && sp.n > 0) {
+      const txt = sp.n === 1 ? t('pulseSpanOne', fmtTokens(sp.min)) : t('pulseSpan', fmtTokens(sp.min), fmtTokens(sp.max), sp.n);
+      const el = body.createEl('div', { cls: 'au-section-sub au-pulse-basis', text: txt });
+      el.title = t(sp.anchored ? 'pulseSpanTipFeed' : 'pulseSpanTipLogs');
+    }
+
+    // ---- Without a feed: one sentence and the way there --------------------------------------
+    if (!off.hasFeed) {
+      const hint = body.createEl('div', { cls: 'au-section-sub au-pulse-feedhint' });
+      hint.createSpan({ text: t('pulseFeedHint') + ' ' });
+      const a = hint.createEl('a', { text: t('pulseFeedLink'), href: '#' });
+      a.onclick = (e) => {
+        e.preventDefault();
+        const sub = (_lang && _lang !== 'en') ? _lang + '/' : '';
+        try { require('electron').shell.openExternal(HELP_URL + sub + '#feed'); } catch (err) {}
+      };
     }
   }
 
@@ -3216,17 +3424,26 @@ class AnthropicUsageView extends obsidian.ItemView {
     add('Current 5h window',         wp.window5h,             'tokens', 'anchored window');
     add('Week so far',               ws.soFar,                'tokens', 'current billing week');
     add('Week forecast',             ws.forecast,             'tokens', 'current billing week');
-    add('Week share of est. limit',  ws.pct,                  '%',      'current billing week');
-    add('Estimated 5h limit',        wp.sessionEst ? wp.sessionEst.median : null, 'tokens', 'median of observed hits');
-    add('5h limit range low',        wp.sessionEst ? wp.sessionEst.min : null,    'tokens', 'lowest observed hit');
-    add('5h limit range high',       wp.sessionEst ? wp.sessionEst.max : null,    'tokens', 'highest observed hit');
-    add('5h limit usual band low',   wp.sessionEst ? wp.sessionEst.bandLow : null,  'tokens', '25th percentile of observed hits');
-    add('5h limit usual band high',  wp.sessionEst ? wp.sessionEst.bandHigh : null, 'tokens', '75th percentile of observed hits');
-    add('5h limit hits observed', wp.totalSession ?? (wp.sessionEst ? wp.sessionEst.n : 0), 'hits', 'within retention window');
+    add('Week forecast share of feed limit', ws.pct,          '%',      ws.weeklyLimitEst ? 'forecast against the weekly limit the feed implies' : 'no feed');
+    // 2.5 ("percentages from Anthropic only"): official values with the time of the reading, the
+    // labelled weekly projection, and the span of the user's own 5h hits. The estimated limits
+    // ("Estimated 5h limit", "Estimated weekly limit", "Weekly limit from hits") are gone.
+    const off = wp.official || {};
+    const iso = (ms) => ms ? new Date(ms).toISOString() : '';
+    const h5o = off.h5 && off.h5.state === 'official' ? off.h5 : null;
+    add('5h official',               h5o ? h5o.pct : null,    '%',      h5o ? 'feed reading at ' + iso(h5o.readAt) : (off.hasFeed ? 'no reading in the current window' : 'no feed'));
+    add('5h counted since reading',  h5o ? h5o.tokSince : null, 'tokens', h5o ? 'since ' + iso(h5o.readAt) : '');
+    const wko = off.wk && off.wk.state !== 'stale' ? off.wk : null;
+    add('Week official',             wko && wko.state === 'official' ? wko.pct : (wko && wko.basePct != null ? wko.basePct : null), '%',
+      wko && wko.readAt ? 'feed reading at ' + iso(wko.readAt) : (off.hasFeed ? 'no reading this week' : 'no feed'));
+    add('Week projected',            wko && wko.state !== 'official' ? Math.round(wko.pct * 10) / 10 : null, '%',
+      wko && wko.state === 'projected' ? 'carried forward from the last reading with counted tokens'
+        : wko && wko.state === 'sinceReset' ? 'carried forward from 0% since the reset with last week\'s limit' : '');
+    add('Weekly limit implied by feed', wp.weekLimit || null, 'tokens', wp.weekLimitSource === 'feed-week' ? 'this week\'s readings' : wp.weekLimitSource === 'feed-lastweek' ? 'last week\'s readings' : '');
+    add('5h window full after, low',  wp.span ? wp.span.min : null, 'tokens', 'lowest of your observed 5h-limit hits');
+    add('5h window full after, high', wp.span ? wp.span.max : null, 'tokens', 'highest of your observed 5h-limit hits');
+    add('5h limit hits observed', wp.totalSession ?? (wp.span ? wp.span.n : 0), 'hits', 'within retention window');
     add('Weekly limit hits observed', wp.weeklyHits,          'hits',   'within retention window');
-    add('Estimated weekly limit',    wp.weeklyLimitEst,       'tokens', wp.weeklySource === 'feed' ? 'from official percentage (status line feed)' : 'empirical estimate');
-    add('5h limit in use',           wp.h5Limit || null,      'tokens', wp.h5Source === 'feed' ? 'from official percentage (status line feed)' : 'median of observed hits');
-    add('Weekly limit from hits',    wp.weeklyLimitHits,      'tokens', 'lowest week that hit the cap');
     add('Counting',                  'input + output',        '',       'plugin figures; officially cache writes appear to count as well');
     add('Exported at',               new Date().toISOString(), 'ISO 8601', '');
     return rows;
@@ -3297,12 +3514,11 @@ class AnthropicUsageView extends obsidian.ItemView {
     // End of the window computed by calendar arithmetic, not +7×86400000 — the week containing a
     // DST change is 23 or 25 hours longer, and adding fixed milliseconds would put the boundary
     // an hour off exactly when the countdown matters. Germany switches on 25.10.2026.
-    const wkEndD = new Date(wkStart); wkEndD.setDate(wkEndD.getDate() + 7);
-    const wkEnd  = wkEndD.getTime();
-    // Same 5h limit as the ring above it (feed first since 09.10.2026), so cell colours and ring agree.
-    const wpH = d.weekPulse || {};
-    // Pace uses the usual 5h limit, not the open window's effective one (can be tiny after a cache re-write).
-    const sessBase = wpH.h5Typical || wpH.h5Limit || (wpH.sessionEst && wpH.sessionEst.median) || 0;
+    // 2.5: from the same reset calculation as everything else (UTC-exact once a reset instant is
+    // known), see nextWeekReset().
+    const wkEnd  = nextWeekReset(now);
+    // 2.5: each cell against the user's own usual 2-hour block, not against an estimated limit.
+    const usualSlot = d.slotAvg || 0;
 
     const hhmm = (ms) => new Date(ms).toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
     const dow  = (ms) => new Date(ms).toLocaleDateString(loc, { weekday: 'short' });
@@ -3360,11 +3576,11 @@ class AnthropicUsageView extends obsidian.ItemView {
         if (ft > now) { cell.addClass('is-void'); continue; }
 
         const tok = slots.get(r * 12 + c) || 0;
-        cell.addClass('au-dheat-' + slotHeatBand(tok, sessBase));
+        cell.addClass('au-dheat-' + slotHeatBand(tok, usualSlot));
         // Shading within the band (mockup). The band carries the meaning and is what the legend
         // explains; the shade only says where inside the band the value sits, and it always runs
         // the same way — more tokens, more solid. No extra claim, just resolution.
-        const sh = slotShade(tok, sessBase);
+        const sh = slotShade(tok, usualSlot);
         if (sh < 1) cell.style.opacity = sh.toFixed(2);
         cell.title = `${hhmm(ft)}–${hhmm(ft + SLOT_MS)} · `
           + (tok > 0 ? fmtTokens(tok) : t('heatLegendEmpty'));
@@ -3380,7 +3596,7 @@ class AnthropicUsageView extends obsidian.ItemView {
     // and this panel the width they both needed.
     this._renderActiveDays(body, d);
     this._heatmapLegend(content, 'au-dheat-legend-row');
-    content.createEl('div', { cls: 'au-section-sub', text: t('timelineSub') });
+    content.createEl('div', { cls: 'au-section-sub', text: t('timelineSub', fmtTokens(Math.round(usualSlot))) });
   }
 
   // Active days in the current billing week (Björn, 02.10.2026 — from his mockup).
@@ -3435,7 +3651,10 @@ class AnthropicUsageView extends obsidian.ItemView {
   _heatmapHeader(parent, subText) {
     const KEY = 'heatmap';
     const isCollapsed = this._collapsed.has(KEY);
-    const sec = parent.createEl('div', { cls: 'au-section au-dheat' });
+    // 2.5: the collapsed state lives as a class on the section, CSS hides the content and closes
+    // the header gap from there. Up to 2.1 it was an inline style on the content, and styles.css
+    // had to detect it with :has(...[style*="none"]), which the community review flags.
+    const sec = parent.createEl('div', { cls: 'au-section au-dheat' + (isCollapsed ? ' is-collapsed' : '') });
     const hdr = sec.createEl('div', { cls: 'au-dheat-hdr' });
     const chev = hdr.createEl('span', { cls: 'au-chevron', text: isCollapsed ? '▶' : '▼' });
     const ico = hdr.createEl('div', { cls: 'au-dheat-ico' });
@@ -3445,17 +3664,11 @@ class AnthropicUsageView extends obsidian.ItemView {
     txt.createEl('div', { cls: 'au-section-sub',   text: subText });
 
     const content = sec.createEl('div', { cls: 'au-dheat-content' });
-    if (isCollapsed) content.style.display = 'none';
     hdr.addEventListener('click', () => {
-      if (this._collapsed.has(KEY)) {
-        this._collapsed.delete(KEY);
-        chev.textContent = '▼';
-        content.style.display = '';
-      } else {
-        this._collapsed.add(KEY);
-        chev.textContent = '▶';
-        content.style.display = 'none';
-      }
+      const collapsed = !this._collapsed.has(KEY);
+      if (collapsed) this._collapsed.add(KEY); else this._collapsed.delete(KEY);
+      chev.textContent = collapsed ? '▶' : '▼';
+      sec.toggleClass('is-collapsed', collapsed);
     });
     return content;
   }
@@ -4346,18 +4559,20 @@ class AnthropicUsageView extends obsidian.ItemView {
       readRateLimitFeed(now.getTime() - (d.retentionDays || 30) * 86_400_000));
     const rlEst = limits.rlEst;
     const rlEvents = rlEst.rlEvents;
-    const weeklyLimitEst = limits.weeklyLimit;
 
+    // 2.5 ("percentages from Anthropic only"): official values, labelled weekly projection, the
+    // weekly limit as the feed implies it, the span of 5h hits. No estimated limits any more.
+    const nowMs = now.getTime();
     const rateLimitPayload = {
       events:       rlEvents.slice().sort((a, b) => b.timestamp - a.timestamp).slice(0, 30),
       weeks:        rlEst.weekBuckets,
-      sessionEst:   rlEst.sessionEst,
-      weeklyEst:    weeklyLimitEst,
-      weeklySource: limits.weeklySource,
-      weeklyEstHits: rlEst.weeklyLimitEst,
-      h5Limit:      limits.h5Limit,
-      h5Typical:    limits.h5Typical,
-      h5Source:     limits.h5Source,
+      official:     limits.official,
+      span:         limits.span,
+      weekLimit:    limits.weekLimit,
+      weekLimitSource: limits.weekLimitSource,
+      windowEnd:    d.window5h.end || null,
+      nextReset:    nextWeekReset(nowMs),
+      now:          nowMs,
       weeklyHits:   rlEst.weeklyHits,
       totalSession: rlEst.totalSession,
       totalWeekly:  rlEst.totalWeekly,
@@ -4376,6 +4591,8 @@ class AnthropicUsageView extends obsidian.ItemView {
     // as its own HTML view instead.
     const reportPayload = this._buildReportPayload();
 
+    // "<" is written as < so no string in the data can close the <script> block it sits in
+    // (2.5, security check 27.10.2026). JSON.parse and the JS engine read < back as "<".
     const safeJson = JSON.stringify({
       allDays, defaultPeriod: reportPeriodDays, liveWindowDays: d.retentionDays || 30,
       dist30, hist, sessions: topSess,
@@ -4392,7 +4609,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       avgDaily: d.avgDaily || 0,
       report: reportPayload,
       projects: this._computeProjectOverview(allDays),
-    });
+    }).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
     return this._dashHtml({
       generated: now.toLocaleString('en-GB'),
@@ -4696,6 +4913,12 @@ tr:hover td{background:rgba(255,255,255,.03)}
 </div>
 <script>
 var D=${safeJson};
+// 2.5 (security check 27.10.2026): every text that comes out of the logs goes through esc()
+// before it is put into innerHTML — folder labels, sub-project labels, model names, session ids.
+// A folder label is the last segment of a working directory, so a crafted folder name (a cloned
+// repo, for instance) could otherwise have run script in this page. Numbers from fN() and the
+// fixed English strings of this template do not need it.
+function esc(v){ return String(v === null || v === undefined ? '' : v).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
 // Must stay identical to MODEL_COLORS in the plugin above — the sidebar and the dashboard keep
 // separate copies (the dashboard is a standalone HTML file), so a change in one without the
 // other would show the same model in two different colours.
@@ -4740,7 +4963,7 @@ function gaugeSvg(pct, color){
 // scaled up and with the percentage set as the panel's headline figure rather than a caption.
 // Over 100% the ring stays full and turns critical — it must not wrap around and read as a
 // fresh, low value.
-function ringSvg(pct, color, size){
+function ringSvg(pct, color, size, center){
   var s = size || 112;
   var stroke = Math.round(s * 0.085);
   var r = (s - stroke) / 2 - 2;
@@ -4753,11 +4976,11 @@ function ringSvg(pct, color, size){
     + '<feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/>'
     + '<feMergeNode in="SourceGraphic"/></feMerge></filter></defs>'
     + '<circle cx="'+mid+'" cy="'+mid+'" r="'+r+'" fill="none" stroke="#1e293b" stroke-width="'+stroke+'"/>'
-    + '<circle cx="'+mid+'" cy="'+mid+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+stroke+'"'
+    + (dash > 0.05 ? ('<circle cx="'+mid+'" cy="'+mid+'" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="'+stroke+'"'
     + ' stroke-dasharray="'+dash.toFixed(1)+' '+c.toFixed(1)+'" stroke-linecap="round"'
-    + ' transform="rotate(-90 '+mid+' '+mid+')" filter="url(#'+id+')"/>'
+    + ' transform="rotate(-90 '+mid+' '+mid+')" filter="url(#'+id+')"/>') : '')
     + '<text x="'+mid+'" y="'+(mid + s*0.09)+'" text-anchor="middle" font-size="'+(s*0.23)+'"'
-    + ' font-weight="700" fill="#f1f5f9">'+Math.round(pct)+'<tspan font-size="'+(s*0.13)+'">%</tspan></text>'
+    + ' font-weight="700" fill="#f1f5f9">'+(center != null ? center : (Math.round(pct)+'<tspan font-size="'+(s*0.13)+'">%</tspan>'))+'</text>'
     + '</svg>';
 }
 function focusMiniRow(label,val,color){
@@ -4779,106 +5002,106 @@ function focusMiniRow(label,val,color){
 // numbers as before — only the presentation changed, nothing new is computed or estimated.
 var ZONE_LABEL = { good: 'Safe', warn: 'Close', bad: 'Over' };
 
-function heroPanel(label, caption, current, target, sub, unavailableText, bands){
-  if (target == null || target <= 0) {
-    return '<div class="hero-panel"><div class="hero-label">'+label+'</div>'
-      +'<div class="hero-caption">'+caption+'</div>'
-      +'<div class="hero-unavailable">'+unavailableText+'</div></div>';
-  }
-  var pct = (current/target)*100;
-  // Two band sets, because two different questions (see renderLimitHero). Against a LIMIT,
-  // 100% is the ceiling. Against your own AVERAGE, 100% is an ordinary day — judging that by
-  // limit bands would mark every normal day as critical.
-  // Since 09.10.2026 (Björn) the average panel is neutral grey: no limit, only a change in how
-  // you work, so it gets no traffic-light colour and its pill names the multiple instead.
-  var b = bands || 'limit';
-  var verdict = (b === 'average')
-    ? 'neutral'
-    : (pct<=80 ?'good':(pct<=100?'warn':'bad'));
+// 2.5 ("percentages from Anthropic only"): a panel carries a percentage only when it came from
+// Anthropic (the feed), or when it is the labelled weekly projection from such a value. o.pct null
+// means no official value: grey, empty ring, counted tokens and the time to the reset instead.
+// Every text in here is built from numbers and fixed English strings, never from log data.
+function limitVerdict(p){ return p<=80 ? 'good' : (p<=100 ? 'warn' : 'bad'); }
+function heroPanel2(o){
+  var has = o.pct !== null && o.pct !== undefined;
+  var verdict = has ? (o.verdict || limitVerdict(o.pct)) : 'neutral';
   var color = VERDICT_HEX[verdict];
-  var pillText = (b === 'average') ? ((pct/100).toFixed(1)+'x your usual day') : ZONE_LABEL[verdict];
-  var barW = Math.max(0, Math.min(100, pct));
-  return '<div class="hero-panel hero-'+verdict+'">'
-    +'<div class="hero-label">'+label+'</div>'
-    +'<div class="hero-caption">'+caption+'</div>'
+  var barW = has ? Math.max(0, Math.min(100, o.pct)) : 0;
+  var pill = o.pill || (has ? ZONE_LABEL[verdict] : 'No official value');
+  return '<div class="hero-panel hero-'+verdict+(has ? '' : ' hero-unofficial')+'">'
+    +'<div class="hero-label">'+o.label+'</div>'
+    +'<div class="hero-caption">'+o.caption+'</div>'
     +'<div class="hero-main">'
-      + ringSvg(pct, color, 112)
+      + ringSvg(has ? o.pct : 0, color, 112, has ? o.center : '–')
       +'<div class="hero-figures">'
-        +'<div class="hero-num">'+fN(current)+' <span class="hero-num-unit">used</span></div>'
-        +'<div class="hero-target">/ '+fN(Math.round(target))+'</div>'
+        +'<div class="hero-num">'+fN(o.current)+' <span class="hero-num-unit">counted</span></div>'
+        +(o.target ? '<div class="hero-target">'+o.target+'</div>' : '')
         +'<div class="hero-bar"><div class="hero-bar-fill" style="width:'+barW+'%;background:'+color+'"></div></div>'
         +'<span class="hero-pill" style="color:'+color+';border-color:'+color+'44;background:'+color+'1a">'
-          +'<span class="hero-dot" style="background:'+color+'"></span>'+pillText
+          +'<span class="hero-dot" style="background:'+color+'"></span>'+pill
         +'</span>'
       +'</div>'
     +'</div>'
-    +'<div class="hero-sub">'+sub+'</div>'
+    +'<div class="hero-sub">'+(o.sub || '')+'</div>'
     +'</div>';
 }
+function atLocal(ms){
+  var d = new Date(ms);
+  var hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return (d.toDateString() === new Date().toDateString()) ? hm : d.toLocaleDateString('en-GB', { weekday: 'short' }) + ' ' + hm;
+}
+function durText(ms){
+  if (!(ms > 0)) return '0m';
+  var dd = Math.floor(ms / 86400000), h = Math.floor((ms % 86400000) / 3600000), m = Math.floor((ms % 3600000) / 60000);
+  return dd > 0 ? (dd+'d '+h+'h') : (h > 0 ? (h+'h '+m+'m') : (m+'m'));
+}
 function renderLimitHero(){
-  var RL=D.rateLimit, ws=D.weekStatus;
-  var se = RL && RL.sessionEst;
-  // Since 09.10.2026 the limit comes from the status line feed where it has one (h5Source feed),
-  // otherwise from the median of observed hits, exactly as before.
-  var h5Feed = RL && RL.h5Source === 'feed';
-  var h5L = (RL && RL.h5Limit) || (se ? se.median : null);
-  var sessionHtml = heroPanel(
-    // "Window", not "Session" (04.10.2026). The sidebar was corrected to the same wording:
-    // calling it a session invites the reading we abolished on 02.10. — that this is simply
-    // "the last five hours". It is an anchored window with a real start time.
-    'Current 5h Window', h5Feed ? 'vs. 5h limit from the official percentage' : 'vs. observed 5h limit',
-    D.currentWindow5h,
-    h5L,
-    h5Feed ? ('usual limit ~'+fN(RL.h5Typical || h5L)+' &nbsp;·&nbsp; this window anchored on the official percentage in your status line feed')
-      : (se ? ('median ~'+fN(se.median)+' &nbsp;·&nbsp; '+(se.bandLow&&se.bandHigh ? 'usually '+fN(se.bandLow)+'–'+fN(se.bandHigh)+' (middle half)' : 'range '+fN(se.min)+'–'+fN(se.max))+' from '+se.n+' observed hits') : ''),
-    'Not enough observed 5h-limit hits yet (need &gt; 50K tokens in a 5h window when one is hit).'
-  );
-  // There is NO daily limit (corrected 01.10.2026). Anthropic enforces an anchored 5-hour window
-  // and a weekly cap, nothing in between — so the former "fair daily share" (weeklyLimitEst / 7)
-  // was a number we made up. Today is now measured against the user's own 29-day average per
-  // active day: it claims no quota, it reports whether today is busier or quieter than usual.
-  // Calendar day, matching the sidebar (fixed 02.10.2026). This panel used to take the current
-  // 24-hour slice of the billing week, which ran reset-hour to reset-hour. That was correct while
-  // Today was measured against a daily share of the weekly limit — the share and the slice had to
-  // use the same span. The share turned out to be invented and is gone, so the panel compares
-  // against the user's own daily average now, and the honest span is the one the word promises.
-  // Leaving it on the slice also meant the Dashboard and the sidebar printed different numbers
-  // under the same label.
-  var dailyBase  = D.avgDaily || null;
-  var dailyHtml = heroPanel(
-    'Today', 'vs. your usual day &nbsp;·&nbsp; calendar day, since midnight',
-    D.todayTotal || 0,
-    dailyBase,
-    dailyBase ? ('your average per active day over all stored days (follows your Claude data retention) — not a limit, Anthropic has none for days') : '',
-    'Not enough history yet to know what a usual day looks like for you.',
-    'average'
-  );
-  var weeklyHtml = heroPanel(
-    'This Week', 'vs. est. weekly limit',
-    ws.soFar,
-    ws.weeklyLimitEst,
-    ws.weeklyLimitEst ? (ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left in this billing week'
-      +(RL && RL.weeklySource === 'feed' ? ' &nbsp;·&nbsp; limit ~'+fN(ws.weeklyLimitEst)+' from the official percentage' : '')) : '',
-    'No weekly-limit hit observed yet in the last 30 days.'
-  );
+  var RL = D.rateLimit || {}, ws = D.weekStatus, O = RL.official || {};
+  var noFeed = 'no official value, needs the feed';
 
-  // Overall zone = worst of the REAL limits only: the 5-hour window and the weekly cap. The
-  // Today panel is deliberately excluded (01.10.2026) — it measures against the user's own
-  // average, not a limit, so a merely busy day must not turn the banner amber. The banner
-  // answers "how close am I to a limit", and a day cannot be close to a limit that has
-  // never existed.
-  var worst = 'good';
-  [[D.currentWindow5h, h5L], [ws.soFar, ws.weeklyLimitEst]]
-    .forEach(function(p){
-      if (!p[1]) return;
-      var q = (p[0]/p[1])*100;
-      var v = q<=80?'good':(q<=100?'warn':'bad');
-      if (v==='bad' || (v==='warn' && worst==='good')) worst = v;
-    });
-  var zoneText = { good:'GREEN ZONE', warn:'AMBER ZONE', bad:'RED ZONE' }[worst];
+  // ---- 5h window: official reading from the open window, or nothing ---------------------------
+  var h5 = O.h5, h5Html;
+  if (h5 && h5.state === 'official') {
+    h5Html = heroPanel2({ label: 'Current 5h Window', caption: 'official percentage from Anthropic',
+      current: D.currentWindow5h, pct: h5.pct, center: Math.round(h5.pct)+'%',
+      sub: 'as of '+atLocal(h5.readAt)+(h5.tokSince > 0 ? ' &nbsp;·&nbsp; +'+fN(h5.tokSince)+' counted since. Within a window the official value can only rise, so it is a lower bound.' : '') });
+  } else {
+    h5Html = heroPanel2({ label: 'Current 5h Window', caption: O.hasFeed ? 'no official reading in this window yet' : noFeed,
+      current: D.currentWindow5h, pct: null,
+      sub: (RL.windowEnd && RL.windowEnd > RL.now ? 'resets in '+durText(RL.windowEnd - RL.now)+' &nbsp;·&nbsp; ' : '')+'input + output counted in this window' });
+  }
+
+  // ---- Today: a multiple of the usual day, grey, no limit -------------------------------------
+  var dailyBase = D.avgDaily || 0, dailyHtml;
+  if (dailyBase > 0) {
+    var x = (D.todayTotal || 0) / dailyBase;
+    dailyHtml = heroPanel2({ label: 'Today', caption: 'vs. your usual day &nbsp;·&nbsp; calendar day, since midnight',
+      current: D.todayTotal || 0, pct: Math.min(100, x * 100), verdict: 'neutral', center: x.toFixed(1)+'x',
+      pill: x.toFixed(1)+'x your usual day', target: 'usual day '+fN(Math.round(dailyBase)),
+      sub: 'your average per active day over all stored days. Not a limit, Anthropic has none for days.' });
+  } else {
+    dailyHtml = heroPanel2({ label: 'Today', caption: 'vs. your usual day', current: D.todayTotal || 0, pct: null,
+      pill: 'No history yet', sub: 'Not enough history yet to know what a usual day looks like for you.' });
+  }
+
+  // ---- Week: official, projected between readings, projected since reset, or nothing ----------
+  var wk = O.wk, wkHtml;
+  var left = ws.remainingDays+' day'+(ws.remainingDays !== 1 ? 's' : '')+' left in this billing week';
+  if (wk && wk.state === 'official') {
+    wkHtml = heroPanel2({ label: 'This Week', caption: 'official percentage from Anthropic',
+      current: ws.soFar, pct: wk.pct, center: Math.round(wk.pct)+'%',
+      sub: (wk.reached ? 'limit reached' : 'as of '+atLocal(wk.readAt))+' &nbsp;·&nbsp; '+left });
+  } else if (wk && wk.state === 'projected') {
+    wkHtml = heroPanel2({ label: 'This Week', caption: 'projected from the last official value',
+      current: ws.soFar, pct: wk.pct, center: '≈'+Math.round(wk.pct)+'%',
+      sub: 'official '+Math.round(wk.basePct)+'% at '+atLocal(wk.readAt)+', carried forward with +'+fN(wk.tokSince)+' counted since, against the weekly limit the feed implies (~'+fN(RL.weekLimit)+') &nbsp;·&nbsp; '+left });
+  } else if (wk && wk.state === 'sinceReset') {
+    wkHtml = heroPanel2({ label: 'This Week', caption: 'projected since the weekly reset',
+      current: ws.soFar, pct: wk.pct, center: '≈'+Math.round(wk.pct)+'%',
+      sub: 'no reading since the reset yet, carried forward from 0% with the limit of last week (~'+fN(RL.weekLimit)+') &nbsp;·&nbsp; '+left });
+  } else {
+    wkHtml = heroPanel2({ label: 'This Week', caption: O.hasFeed ? 'no official reading this week yet' : noFeed,
+      current: ws.soFar, pct: null,
+      sub: 'resets in '+durText((RL.nextReset || 0) - (RL.now || 0))+' &nbsp;·&nbsp; input + output counted this billing week' });
+  }
+
+  // Overall zone = worst of the official values only (5h reading, week official or projected).
+  // Today is excluded, it is no limit. Without any official value there is no zone at all.
+  var vals = [];
+  if (h5 && h5.state === 'official') vals.push(h5.pct);
+  if (wk && (wk.state === 'official' || wk.state === 'projected' || wk.state === 'sinceReset')) vals.push(wk.pct);
+  var worst = vals.length ? 'good' : 'neutral';
+  vals.forEach(function(q){ var v = limitVerdict(q); if (v === 'bad' || (v === 'warn' && worst === 'good')) worst = v; });
+  var zoneText = { good:'GREEN ZONE', warn:'AMBER ZONE', bad:'RED ZONE', neutral:'NO OFFICIAL VALUES' }[worst];
   var zoneSub  = { good:"You're well within your limits.",
                    warn:'Approaching one of your limits.',
-                   bad:'At or past an estimated limit.' }[worst];
+                   bad:'At or past one of your limits.',
+                   neutral:'Set up the feed to see where you stand against your limits.' }[worst];
   var zoneCol  = VERDICT_HEX[worst];
 
   document.getElementById('limitHero').innerHTML =
@@ -4886,7 +5109,7 @@ function renderLimitHero(){
     +   '<div class="hero-head">'
     +     '<div>'
     +       '<div class="hero-title">AI Budget Status</div>'
-    +       '<div class="hero-title-note">Live usage against your limits — empirical, not published by Anthropic</div>'
+    +       '<div class="hero-title-note">Percentages only from Anthropic (via the feed), always with the time of the reading. Tokens are counted locally.</div>'
     +     '</div>'
     +     '<div class="hero-zone" style="border-color:'+zoneCol+'55;background:'+zoneCol+'14">'
     +       '<span class="hero-zone-dot" style="background:'+zoneCol+'"></span>'
@@ -4894,7 +5117,7 @@ function renderLimitHero(){
     +       '<div class="hero-zone-sub">'+zoneSub+'</div></div>'
     +     '</div>'
     +   '</div>'
-    +   '<div class="hero-row">' + sessionHtml + dailyHtml + weeklyHtml + '</div>'
+    +   '<div class="hero-row">' + h5Html + dailyHtml + wkHtml + '</div>'
     + '</div>';
 }
 
@@ -4905,12 +5128,14 @@ function renderKpiRow(){
   var wfCard='<div class="kpi-card" style="border-left-color:#3987E5"><div><div class="kpi-label">Weekly Forecast</div>'
     +'<div class="kpi-val">'+fN(ws.forecast)+'</div><div class="kpi-sub">so far '+fN(ws.soFar)+'</div></div>'+wfSpark+'</div>';
 
+  // 2.5: only against the weekly limit the feed implies. Without the feed there is nothing to
+  // compare with, and the card says how to get there instead of estimating.
   var lhColor=VERDICT_HEX[ws.verdict]||VERDICT_HEX.neutral;
   var lhBody = ws.weeklyLimitEst
-    ? ('<div class="kpi-val" style="font-size:15px">'+ws.pct+'%</div><div class="kpi-sub">'+(ws.daysUntilExhausted!==null?('~'+ws.daysUntilExhausted.toFixed(1)+'d budget left'):'of est. limit')+'</div>')
-    : '<div class="kpi-sub" style="line-height:1.4;max-width:90px">Est. limit not yet available</div>';
+    ? ('<div class="kpi-val" style="font-size:15px">'+ws.pct+'%</div><div class="kpi-sub">'+(ws.daysUntilExhausted!==null?('~'+ws.daysUntilExhausted.toFixed(1)+'d budget left'):'forecast of the limit')+'</div>')
+    : '<div class="kpi-sub" style="line-height:1.4;max-width:110px">Needs the feed for an official weekly value</div>';
   var lhGauge = ws.weeklyLimitEst ? gaugeSvg(ws.pct||0,lhColor) : '';
-  var lhCard='<div class="kpi-card" style="border-left-color:'+lhColor+'"><div><div class="kpi-label">Limit Health</div>'+lhBody+'</div>'+lhGauge+'</div>';
+  var lhCard='<div class="kpi-card" style="border-left-color:'+lhColor+'" title="Forecast for the end of the billing week against the weekly limit implied by the official percentage"><div><div class="kpi-label">Limit Health</div>'+lhBody+'</div>'+lhGauge+'</div>';
 
   var ceCard='<div class="kpi-card" id="kpiCache" style="border-left-color:#0CA30C"></div>';
   var dvCard='<div class="kpi-card" id="kpiVelocity" style="border-left-color:#9085E9"></div>';
@@ -4928,62 +5153,33 @@ function renderKpiRow(){
   document.getElementById('kpiRow').innerHTML = wfCard+lhCard+ceCard+dvCard+fsCard;
 }
 
-// The weekly reset is a fixed moment in UTC (Sunday 16:00), so its LOCAL clock time shifts with
-// daylight saving: 18:00 in summer, 17:00 in winter. Every label used to say "18:00" outright,
-// which would quietly go an hour wrong at the end of October. Derived from the actual instant
-// instead, so it is right in both halves of the year and in any timezone.
-function resetClockLocal(){
-  var d = new Date();
-  d.setUTCHours(16, 0, 0, 0);
-  while (d.getUTCDay() !== 0) d.setUTCDate(d.getUTCDate() + 1);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
+// 2.5: the reset comes from the plugin (D.rateLimit.nextReset), which knows the user's real reset
+// instant from the feed or a weekly-limit message. Up to 2.1 this was hard-wired to Sunday 16:00
+// UTC, which is one account's schedule, not everyone's.
+function resetInstant(){ return new Date((D.rateLimit && D.rateLimit.nextReset) || Date.now()); }
+function resetClockLocal(){ return resetInstant().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+function resetDayShort(){ return resetInstant().toLocaleDateString('en-GB', { weekday: 'short' }); }
 
 function renderWeekBar(){
   var ws=D.weekStatus;
-  var resetAt = resetClockLocal();
+  var resetAt = resetClockLocal(), resetDay = resetDayShort();
   var noteEl = document.getElementById('weekWindowNote');
-  if (noteEl) noteEl.textContent = '(Sun ' + resetAt + ' → Sun ' + resetAt + ', your local time)';
-  // Billing-week buckets run 18:00→18:00 (Sunday 18:00 reset), not local midnight. Each bucket
-  // is therefore named after the day it ENDS on, not the one it starts on — that is the day it
-  // mostly consists of: the Wed 18:00→Thu 18:00 bucket holds 18 of Thursday's hours against
-  // only 6 of Wednesday's, so it is the Thursday column.
-  //
-  // Fixed 01.10.2026 (Björn: "Heute ist Donnerstag und Thursday ist farblos"). Naming buckets
-  // by their start day shifted the whole week back by one, so on a Thursday morning the live
-  // bucket sat in the Wednesday slot and the Thursday column stood empty — the current day
-  // appeared to have no data at all. The totals were always right; only the labels were off.
-  var lbls=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  // Day colour = that day against the USER OWN AVERAGE, not against the week's biggest day
-  // (fixed v2.0, spotted by Björn 01.10.2026). The old version divided by the week's maximum,
-  // so the busiest day was always red even at 18% of the weekly limit — a red bar sitting
-  // directly under a green "well within your limits" banner. Status colours have to mean a
-  // verdict, and the only honest verdict here is "how did this day compare to what a day may
-  // fairly use". With no weekly estimate there is nothing to judge against, so the bars stay
-  // neutral rather than inventing a scale.
-  // Two channels, two questions — the fix to the fix (Björn, 01.10.2026: "warum ist jetzt alles
-  // grün?"). Colouring purely by verdict made every day green at 18% of the weekly limit, which
-  // is correct but says nothing about WHICH day was heavy. Colouring by relative height, as the
-  // original did, made the busiest day red even when it was harmless. So:
-  //   FILL HEIGHT = how much (relative to the week's biggest day) — magnitude
-  //   COLOUR      = how does it rate against your own usual day — verdict
-  // Neither channel has to lie about the other, and the bar answers both questions at once.
-  // Colour = each day against the user's OWN average, not against a daily quota — there is no
-  // daily quota (corrected 01.10.2026). Bands are the average bands (1.5x busier, 2x spike),
-  // not the limit bands, because an ordinary day sits at roughly 100% here.
+  if (noteEl) noteEl.textContent = '(' + resetDay + ' ' + resetAt + ' → ' + resetDay + ' ' + resetAt + ', your local time)';
+  // Buckets are named after the day they END on (fixed 01.10.2026, see git history). Colour =
+  // each day against the user's own average (no daily quota exists), height = relative magnitude.
+  var lbls=[];
+  for (var k=0;k<7;k++){ lbls.push(new Date(ws.days.length ? (resetInstant().getTime() - (7-k-1)*86400000) : Date.now()).toLocaleDateString('en-GB',{weekday:'short'})); }
   var dailyBase = D.avgDaily || null;
   var maxTok = Math.max.apply(null, ws.days.map(function(d){ return d.tokens; }).concat([1]));
   var html=ws.days.map(function(d,i){
     var cls='week-day'+(d.status==='future'?' future':'')+(d.status==='current'?' current':'');
     var col;
     if (!d.tokens)       col = '#2b3a52';
-    else if (!dailyBase) col = '#475569';   // no history yet — neutral, not a guess
+    else if (!dailyBase) col = '#475569';
     else {
       var q = (d.tokens / dailyBase) * 100;
       col = VERDICT_HEX[q <= 150 ? 'good' : (q <= 200 ? 'warn' : 'bad')];
     }
-    // Floor of 6% so a day with little but non-zero usage still shows a sliver rather than
-    // reading as "nothing happened".
     var fillPct = d.status === 'future' ? 0
                 : (d.tokens ? Math.max(6, (d.tokens / maxTok) * 100) : 0);
     var lbl = d.status==='current' ? 'Today' : lbls[i];
@@ -4996,13 +5192,14 @@ function renderWeekBar(){
   }).join('');
   document.getElementById('weekBar').innerHTML=html;
   var vEl=document.getElementById('weekVerdict');
-  var vText = ws.verdict==='good'?'On track':ws.verdict==='warn'?'Approaching limit':ws.verdict==='bad'?'Likely to exceed':'No estimate yet';
+  var vText = ws.verdict==='good'?'On track':ws.verdict==='warn'?'Approaching limit':ws.verdict==='bad'?'Likely to exceed':'No official weekly value';
   vEl.textContent=vText;
   vEl.style.background=VERDICT_HEX[ws.verdict]+'22';
   vEl.style.color=VERDICT_HEX[ws.verdict];
+  var left = ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left in this billing week';
   var foot = ws.weeklyLimitEst
-    ? ('Forecast '+fN(ws.forecast)+' of an estimated '+fN(ws.weeklyLimitEst)+' tokens by Sunday '+resetAt+' &nbsp;·&nbsp; '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left in this billing week. Each bar is a 24-hour slice of that week, running '+resetAt+' to '+resetAt+' so the seven of them tile the week exactly. Anthropic measures no day at all.')
-    : ('No weekly-limit hit observed yet, so there is nothing to compare against. '+fN(ws.soFar)+' tokens so far this billing week, '+ws.remainingDays+' day'+(ws.remainingDays!==1?'s':'')+' left.');
+    ? ('Forecast '+fN(ws.forecast)+' of the weekly limit the official percentage implies (~'+fN(ws.weeklyLimitEst)+') by '+resetDay+' '+resetAt+' &nbsp;·&nbsp; '+left+'. Each bar is a 24-hour slice of that week, running '+resetAt+' to '+resetAt+' so the seven of them tile the week exactly. Anthropic measures no day at all.')
+    : ('No official weekly value (needs the feed), so there is nothing to compare against. '+fN(ws.soFar)+' tokens so far this billing week, '+left+'.');
   document.getElementById('weekFoot').innerHTML=foot;
 }
 
@@ -5109,7 +5306,7 @@ function applyPeriod(nStr){
   new Chart(document.getElementById('cModel'),{type:'doughnut',data:{labels:dist.map(function(m){return m.name;}),datasets:[{data:dist.map(function(m){return m.count;}),backgroundColor:dist.map(function(m){return C[m.name]||C.Other;}),borderWidth:2,borderColor:'#0f172a'}]},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:11}}},tooltip:{callbacks:{label:function(ctx){var m=dist[ctx.dataIndex];return' '+m.name+': '+m.count+' calls ('+m.pct+'%)';}}}}}});
   new Chart(document.getElementById('cDist'),{type:'bar',data:{labels:D.hist.map(function(h){return h.label;}),datasets:[{data:D.hist.map(function(h){return h.count;}),backgroundColor:'#3987E5',borderRadius:3}]},options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:function(ctx){return' '+ctx.raw+' requests';}}}},scales:{x:{grid:{color:'rgba(255,255,255,0.05)'}},y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'}}}}});
   var tbody=document.getElementById('tSess');
-  D.sessions.forEach(function(s){var tr=document.createElement('tr');var col=C[s.primary]||C.Other;tr.innerHTML='<td style="font-family:monospace;color:#64748b">'+s.id+'…</td><td>'+s.start+'</td><td style="color:#f1f5f9;font-weight:600">'+fN(s.tokens)+'</td><td>'+s.reqs+'</td><td><span class="badge" style="background:'+col+'22;color:'+col+'">'+s.primary+'</span></td>';tbody.appendChild(tr);});
+  D.sessions.forEach(function(s){var tr=document.createElement('tr');var col=C[s.primary]||C.Other;tr.innerHTML='<td style="font-family:monospace;color:#64748b">'+esc(s.id)+'…</td><td>'+esc(s.start)+'</td><td style="color:#f1f5f9;font-weight:600">'+fN(s.tokens)+'</td><td>'+esc(s.reqs)+'</td><td><span class="badge" style="background:'+col+'22;color:'+col+'">'+esc(s.primary)+'</span></td>';tbody.appendChild(tr);});
 }());
 
 // ── Rate Limits section ──────────────────────────────────────────
@@ -5118,21 +5315,21 @@ function applyPeriod(nStr){
   if (!RL) return;
   var estEl = document.getElementById('rlEst');
   var estHtml = '';
-  if (RL.sessionEst && RL.sessionEst.n > 0) {
-    var se = RL.sessionEst;
-    estHtml += '<strong>5h limit estimate: ~' + fN(se.min) + ' – ' + fN(se.max) + ' tokens / 5h</strong>'
-      + ' &nbsp;·&nbsp; median ' + fN(se.median) + ' &nbsp;·&nbsp; ' + se.n + ' observed hits (last 30 days)';
+  // 2.5: the span at which the 5h window has filled up, no estimated limit any more.
+  var sp = RL.span;
+  if (sp && sp.n > 1) {
+    estHtml += '<strong>Your 5h window has filled up after ' + fN(sp.min) + ' to ' + fN(sp.max) + ' (input + output)</strong>'
+      + ' &nbsp;·&nbsp; ' + sp.n + ' observed hits, window start ' + (sp.anchored ? 'as reported by Anthropic where the feed knows it' : 'rebuilt from your logs');
+  } else if (sp && sp.n === 1) {
+    estHtml += '<strong>Your 5h window has filled up once so far, after ' + fN(sp.min) + ' (input + output)</strong>';
   } else {
-    estHtml += '<strong>5h limit estimate:</strong> not enough data yet (need observed hits with > 50 K tokens in 5h window)';
+    estHtml += '<strong>No 5h-limit hit with more than 50 K tokens in its window so far.</strong>';
   }
-  if (RL.weeklyEst) {
-    estHtml += '<br><strong>Weekly limit estimate: ≥ ' + fN(RL.weeklyEst) + ' tokens / week</strong>'
-      + ' (conservative lower bound from ' + RL.weeklyHits + ' weekly-limit event' + (RL.weeklyHits !== 1 ? 's' : '') + ')';
-  }
+  estHtml += '<br>How fast a window fills depends mostly on how much context a session carries through the cache, which is why the span is wide. Token Usage therefore shows no estimated limit: percentages come from Anthropic only, via the feed.';
   estHtml += '<br><span style="color:#64748b;font-size:11px">'
     + RL.totalSession + ' 5h-limit hit' + (RL.totalSession !== 1 ? 's' : '')
     + ' &nbsp;·&nbsp; ' + RL.totalWeekly + ' weekly-limit hit' + (RL.totalWeekly !== 1 ? 's' : '')
-    + ' in last 30 days. Anthropic does not publish these limits — all values are empirical.'
+    + ' in last 30 days.'
     + ' Counted from Claude Code activity only (terminal, Obsidian, editors, desktop agent mode);'
     + ' plain chat in the desktop app or on claude.ai draws on the same plan limit but records no'
     + ' token counts locally, so a limit was likely reached at a higher total than shown here.</span>';
@@ -5148,9 +5345,9 @@ function applyPeriod(nStr){
       ? (ev.tokWeek > 0 ? fN(ev.tokWeek) + '<br><span style="font-size:10px;color:#64748b">billing week</span>' : '—')
       : (ev.tok5h  > 0 ? fN(ev.tok5h)   + '<br><span style="font-size:10px;color:#64748b">5h window</span>'   : '—');
     tr.innerHTML = '<td>' + dStr + '</td><td>' + tStr + '</td>'
-      + '<td><span class="badge" style="background:' + col + '22;color:' + col + '">' + ev.type + '</span></td>'
+      + '<td><span class="badge" style="background:' + col + '22;color:' + col + '">' + esc(ev.type) + '</span></td>'
       + '<td style="color:#f1f5f9;font-weight:600">' + tok + '</td>'
-      + '<td style="color:#64748b">' + (ev.reset || '—') + '</td>';
+      + '<td style="color:#64748b">' + esc(ev.reset || '—') + '</td>';
     tbody.appendChild(tr);
   });
   if (RL.weeks && RL.weeks.length > 0) {
@@ -5189,8 +5386,8 @@ function applyPeriod(nStr){
 // table it drags the label column out to roughly half the container width, leaving a big gap
 // before the value. "width:1%" + "white-space:nowrap" on the first cell is the standard trick
 // to force that column to shrink to its content instead, so label and value sit close together.
-function simpleTable(rows){ return '<table><tbody>'+rows.map(function(r){return '<tr><td style="color:#94a3b8;width:1%;white-space:nowrap;padding-right:28px">'+r[0]+'</td><td style="color:#f1f5f9;font-weight:600">'+r[1]+'</td></tr>';}).join('')+'</tbody></table>'; }
-function reportTable(title, rows){ return '<div class="cb report-section"><h2>'+title+'</h2>'+simpleTable(rows)+'</div>'; }
+function simpleTable(rows){ return '<table><tbody>'+rows.map(function(r){return '<tr><td style="color:#94a3b8;width:1%;white-space:nowrap;padding-right:28px">'+esc(r[0])+'</td><td style="color:#f1f5f9;font-weight:600">'+esc(r[1])+'</td></tr>';}).join('')+'</tbody></table>'; }
+function reportTable(title, rows){ return '<div class="cb report-section"><h2>'+esc(title)+'</h2>'+simpleTable(rows)+'</div>'; }
 function renderReports(){
   var R=D.report;
   var html='';
@@ -5208,7 +5405,7 @@ function renderReports(){
     html+=reportTable(p.title,[['Input',p.input],['Output',p.output],['Cache Write',p.cacheCreate],['Cache Read',p.cacheRead],['API Calls',p.calls]]);
   });
   if(R.models7.length){
-    var rows7h=R.models7.map(function(m){return '<tr><td>'+m.name+'</td><td>'+m.count+'</td><td>'+m.pct+'%</td><td>'+m.tokens+'</td></tr>';}).join('');
+    var rows7h=R.models7.map(function(m){return '<tr><td>'+esc(m.name)+'</td><td>'+esc(m.count)+'</td><td>'+esc(m.pct)+'%</td><td>'+esc(m.tokens)+'</td></tr>';}).join('');
     html+='<div class="cb report-section"><h2>Models (7 Days)</h2><table><thead><tr><th>Model</th><th>Calls</th><th>%</th><th>Tokens</th></tr></thead><tbody>'+rows7h+'</tbody></table></div>';
   }
   var cacheNote = R.cache.activeInPeriod!==null
@@ -5218,7 +5415,7 @@ function renderReports(){
     +simpleTable([['Cache Write',R.cache.write],['Cache Read',R.cache.read],['Reuse Factor (Read/Write)',R.cache.reuse+'x']])
     +cacheNote+'</div>';
   if(R.chart7.length){
-    var rows7=R.chart7.map(function(d){return '<tr><td>'+d.date+(d.isToday?' (today)':'')+'</td><td>'+d.input+'</td><td>'+d.output+'</td><td>'+d.total+'</td></tr>';}).join('');
+    var rows7=R.chart7.map(function(d){return '<tr><td>'+esc(d.date)+(d.isToday?' (today)':'')+'</td><td>'+esc(d.input)+'</td><td>'+esc(d.output)+'</td><td>'+esc(d.total)+'</td></tr>';}).join('');
     html+='<div class="cb report-section"><h2>7-Day Overview</h2><table><thead><tr><th>Date</th><th>Input</th><th>Output</th><th>Total</th></tr></thead><tbody>'+rows7+'</tbody></table></div>';
   }
   document.getElementById('paneReports').innerHTML=html;
@@ -5277,6 +5474,8 @@ function toggleProjVault(label){ projCollapsed[label] = !projCollapsed[label]; r
 function csvCell(v){
   if (v === null || v === undefined) return '';
   var s = String(v);
+  // 2.5: same formula guard as csvSafeText() on the plugin side (CSV injection, OWASP).
+  if (typeof v !== 'number' && /^[=+\\-@\\t\\r]/.test(s) && !/^[-+]?\\d+([.,]\\d+)?%?$/.test(s)) s = "'" + s;
   // RFC 4180: quote if the value holds a delimiter, quote or line break; escape quotes by doubling.
   return /[",\\n\\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
@@ -5354,19 +5553,23 @@ function exportKpisCsv(){
   add('Focus score label',       fs.badge,          '',              per);
   add('Week so far',             ws.soFar,          'tokens',        'current billing week');
   add('Week forecast',           ws.forecast,       'tokens',        'current billing week');
-  add('Week share of est. limit', ws.pct,           '%',             'current billing week');
-  // sessionEst is an OBJECT ({n, min, max, median}), unlike weeklyEst which is a plain number.
-  // Exported raw it landed in the CSV as "[object Object]" (found 02.10.2026). The median is the
-  // figure the gauges and the heatmap bands actually use, so that is what belongs here; min, max
-  // and the hit count go in their own rows rather than being squeezed into one cell.
-  add('Estimated 5h limit',      rl.sessionEst ? rl.sessionEst.median : null, 'tokens', 'median of observed hits');
-  add('5h limit range low',      rl.sessionEst ? rl.sessionEst.min : null,  'tokens', 'lowest observed hit');
-  add('5h limit range high',     rl.sessionEst ? rl.sessionEst.max : null,  'tokens', 'highest observed hit');
-  add('5h limit usual band low',  rl.sessionEst ? rl.sessionEst.bandLow : null,  'tokens', '25th percentile of observed hits');
-  add('5h limit usual band high', rl.sessionEst ? rl.sessionEst.bandHigh : null, 'tokens', '75th percentile of observed hits');
-  add('Estimated weekly limit',  rl.weeklyEst,      'tokens',        rl.weeklySource === 'feed' ? 'from official percentage (status line feed)' : 'empirical estimate');
-  add('5h limit in use',         rl.h5Limit || null, 'tokens',       rl.h5Source === 'feed' ? 'from official percentage (status line feed)' : 'median of observed hits');
-  add('Weekly limit from hits',  rl.weeklyEstHits,  'tokens',        'lowest week that hit the cap');
+  add('Week forecast share of feed limit', ws.pct,  '%',             ws.weeklyLimitEst ? 'forecast against the weekly limit the feed implies' : 'no feed');
+  // 2.5: same rows as the plugin-side export (_csvRows), official values with the time of the
+  // reading, the labelled projection and the span. The estimated limits are gone.
+  var O = rl.official || {};
+  function iso(ms){ return ms ? new Date(ms).toISOString() : ''; }
+  var h5o = (O.h5 && O.h5.state === 'official') ? O.h5 : null;
+  add('5h official',             h5o ? h5o.pct : null, '%',            h5o ? 'feed reading at ' + iso(h5o.readAt) : (O.hasFeed ? 'no reading in the current window' : 'no feed'));
+  add('5h counted since reading', h5o ? h5o.tokSince : null, 'tokens', h5o ? 'since ' + iso(h5o.readAt) : '');
+  var wko = (O.wk && O.wk.state !== 'stale') ? O.wk : null;
+  add('Week official',           wko && wko.state === 'official' ? wko.pct : (wko && wko.basePct != null ? wko.basePct : null), '%',
+    wko && wko.readAt ? 'feed reading at ' + iso(wko.readAt) : (O.hasFeed ? 'no reading this week' : 'no feed'));
+  add('Week projected',          wko && wko.state !== 'official' ? Math.round(wko.pct * 10) / 10 : null, '%',
+    wko && wko.state === 'projected' ? 'carried forward from the last reading with counted tokens'
+      : (wko && wko.state === 'sinceReset' ? 'carried forward from 0% since the reset with the limit of last week' : ''));
+  add('Weekly limit implied by feed', rl.weekLimit || null, 'tokens', rl.weekLimitSource === 'feed-week' ? 'readings of this week' : (rl.weekLimitSource === 'feed-lastweek' ? 'readings of last week' : ''));
+  add('5h window full after, low',  rl.span ? rl.span.min : null, 'tokens', 'lowest of your observed 5h-limit hits');
+  add('5h window full after, high', rl.span ? rl.span.max : null, 'tokens', 'highest of your observed 5h-limit hits');
   add('5h limit hits observed', rl.totalSession, 'hits',        'all recorded data');
   add('Weekly limit hits observed',  rl.totalWeekly,  'hits',        'all recorded data');
   add('Exported at',             new Date().toISOString(), 'ISO 8601', '');
@@ -5482,7 +5685,7 @@ function projectsOverviewTable(){
     var first = new Date(p.firstTs).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
     var last  = new Date(p.lastTs).toLocaleDateString('en-GB', {day:'2-digit',month:'2-digit',year:'numeric'});
     if (p._isOther) {
-      return '<tr class="proj-other-row"><td>'+p.label+'</td><td style="color:#cbd5e1;font-weight:600">'+fN(p.tokens)+'</td><td>'+p.pct+'%</td><td>'+p.activeDays+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
+      return '<tr class="proj-other-row"><td>'+esc(p.label)+'</td><td style="color:#cbd5e1;font-weight:600">'+fN(p.tokens)+'</td><td>'+esc(p.pct)+'%</td><td>'+esc(p.activeDays)+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
     }
     var hasSub = projSubDetail && p.projects && p.projects.length;
     var open = hasSub && !projCollapsed[p.label];
@@ -5492,13 +5695,13 @@ function projectsOverviewTable(){
     var badge = hasSub ? '<span class="proj-subcount">'+p.projects.length+' sub</span>' : '';
     var rowCls = 'proj-vault-row' + (hasSub ? ' has-sub' : '');
     var labelCell = hasSub
-      ? '<td data-label="'+encodeURIComponent(p.label)+'" class="proj-vault-label">'+lead+p.label+badge+'</td>'
-      : '<td>'+lead+p.label+'</td>';
-    var tr = '<tr class="'+rowCls+'">'+labelCell+'<td style="color:#f1f5f9;font-weight:600">'+fN(p.tokens)+'</td><td>'+p.pct+'%</td><td>'+p.activeDays+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
+      ? '<td data-label="'+encodeURIComponent(p.label)+'" class="proj-vault-label">'+lead+esc(p.label)+badge+'</td>'
+      : '<td>'+lead+esc(p.label)+'</td>';
+    var tr = '<tr class="'+rowCls+'">'+labelCell+'<td style="color:#f1f5f9;font-weight:600">'+fN(p.tokens)+'</td><td>'+esc(p.pct)+'%</td><td>'+esc(p.activeDays)+'</td><td>'+first+'</td><td>'+last+'</td></tr>';
     if (open) {
       tr += p.projects.map(function(s){
-        return '<tr class="proj-subrow"><td>'+s.label+'</td>'
-          + '<td>'+fN(s.tokens)+'</td><td>'+s.pct+'%</td>'
+        return '<tr class="proj-subrow"><td>'+esc(s.label)+'</td>'
+          + '<td>'+fN(s.tokens)+'</td><td>'+esc(s.pct)+'%</td>'
           + '<td class="sub-muted">–</td><td class="sub-muted">–</td><td class="sub-muted">–</td></tr>';
       }).join('');
     }
@@ -5534,11 +5737,14 @@ function dailyDetailTable(slice, labels){
   });
   var head = cols.map(function(c){
     var arrow = c.key === dailySort.key ? (dailySort.dir === 'asc' ? ' ▲' : ' ▼') : '';
-    return '<th style="cursor:pointer;user-select:none" onclick="toggleDailySort(\\''+c.key+'\\')" title="Click to sort">'+c.title+arrow+'</th>';
+    // Column keys here are folder labels, so no inline onclick (a label would have to be escaped
+    // into a JS string inside an attribute). Same data- attribute + handler pattern as the
+    // sub-project collapse below; wired in renderProjects() after innerHTML (2.5).
+    return '<th class="daily-sort" data-key="'+encodeURIComponent(c.key)+'" style="cursor:pointer;user-select:none" title="Click to sort">'+esc(c.title)+arrow+'</th>';
   }).join('');
   var body = rows.map(function(d){
     var cells = labels.map(function(l){ var r=(d.byRoot||{})[l]; return '<td>'+fN(r?r.total:0)+'</td>'; }).join('');
-    return '<tr><td>'+d.label+'</td>'+cells+'<td style="color:#f1f5f9;font-weight:600">'+fN(d.total)+'</td></tr>';
+    return '<tr><td>'+esc(d.label)+'</td>'+cells+'<td style="color:#f1f5f9;font-weight:600">'+fN(d.total)+'</td></tr>';
   }).join('');
   return '<div style="overflow-x:auto"><table><thead><tr>'+head+'</tr></thead><tbody>'+body+'</tbody></table></div>';
 }
@@ -5569,6 +5775,9 @@ function renderProjects(n){
   if (subCb) subCb.onchange = function(){ setProjSubDetail(subCb.checked); };
   Array.prototype.forEach.call(document.querySelectorAll('#paneProjects .proj-vault-label'), function(el){
     el.onclick = function(){ toggleProjVault(decodeURIComponent(el.getAttribute('data-label'))); };
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#paneProjects .daily-sort'), function(el){
+    el.onclick = function(){ toggleDailySort(decodeURIComponent(el.getAttribute('data-key'))); };
   });
 }
 
@@ -5640,14 +5849,18 @@ function buildSettingsUI(containerEl, app, plugin, refreshUI) {
   // somebody else's week.
   const calDone   = plugin.settings.weeklyResetSetAt != null;
   const calAuto   = plugin.settings.weeklyResetSource === 'auto';
+  const calFeed   = plugin.settings.weeklyResetSource === 'feed';
   const dFmt      = { day: '2-digit', month: '2-digit', year: 'numeric' };
+  const calFrom   = new Date(plugin.settings.weeklyResetFrom || plugin.settings.weeklyResetSetAt).toLocaleDateString(localeFor(_lang), dFmt);
   const calSetting = new obsidian.Setting(containerEl)
     .setName(t('settingReset'))
     .setDesc(!calDone
       ? t('settingResetDesc')
-      : calAuto
-        ? t('settingResetAuto', new Date(plugin.settings.weeklyResetFrom || plugin.settings.weeklyResetSetAt).toLocaleDateString(localeFor(_lang), dFmt))
-        : t('settingResetDone', new Date(plugin.settings.weeklyResetSetAt).toLocaleDateString(localeFor(_lang), dFmt)));
+      : calFeed
+        ? t('settingResetFeed', calFrom)
+        : calAuto
+          ? t('settingResetAuto', calFrom)
+          : t('settingResetDone', new Date(plugin.settings.weeklyResetSetAt).toLocaleDateString(localeFor(_lang), dFmt)));
 
   // Visual state, not just wording: a calibrated setting gets a green check and a muted,
   // confirming description; an uncalibrated one gets an amber dot. The point is that a user
@@ -5803,6 +6016,19 @@ class AnthropicUsageSettingTab extends obsidian.PluginSettingTab {
 // with each release that has user-facing highlights worth surfacing (skip pure bugfix
 // releases — see AnthropicUsagePlugin._maybeShowWhatsNew()).
 const WHATS_NEW_HIGHLIGHTS = {
+  '2.5.0': [
+    'Percentages now come from Anthropic only. Up to 2.1 we estimated the 5-hour window and the week. Measured against the official values for eleven days, the 5-hour estimate was off by 36 points on average, and when a window was officially full our ring stood anywhere between 61 and 217 percent. That was our decision, and it was wrong.',
+
+    'From 2.5 on, the 5-hour and week rings show a percentage only when it comes from Anthropic, with the time of the reading. That needs the feed (setup on the help page). Between two readings the week is carried forward with your counted tokens and labelled as projected.',
+
+    'Without the feed you see what is certain: counted tokens, the time to the reset, and the span at which your 5-hour window has filled up so far. The Today ring shows a multiple of your usual day, and the heatmap measures each cell against your own usual 2-hour block.',
+
+    'The weekly reset follows daylight saving. Anthropic resets in UTC, so after the clocks change the week ended an hour off. The reset now comes from the feed or from your weekly-limit message as an exact moment.',
+
+    'After our own security check, three things are safer: the dashboard now escapes folder and model names (a crafted folder name could have run script in the dashboard page in your browser), CSV exports neutralise formulas, and the release workflow pins its actions to fixed versions. We know of no case where any of this was used.',
+
+    'The CSS lint note about :has from the community review is fixed. We promised that for 2.1 and missed it twice.',
+  ],
   '2.1.0': [
     'Your numbers will drop after this update, and here is why. Six things in this plugin were wrong, and two of them were claims we made ourselves in 2.0.0. All six are corrected. Details below and in the changelog',
 
@@ -5998,9 +6224,12 @@ class AnthropicUsagePlugin extends obsidian.Plugin {
   // -level values, so without it a freshly calibrated reset would not take effect until the
   // next Obsidian restart — the user would change the setting and see nothing happen.
   _applyReset() {
+    const s = this.settings;
     setBillingWeekReset(
-      this.settings.weeklyResetDay  ?? 0,
-      this.settings.weeklyResetHour ?? 18,
+      s.weeklyResetDay  ?? 0,
+      s.weeklyResetHour ?? 18,
+      // 2.5: a detected reset carries the real instant; a hand-set one stays local time.
+      (s.weeklyResetSource === 'auto' || s.weeklyResetSource === 'feed') ? s.weeklyResetAt : null,
     );
   }
   async loadSettings(raw)  { this.settings = Object.assign({}, DEFAULT_SETTINGS, raw); _lang = this.settings.language || 'en'; this._applyReset(); }
