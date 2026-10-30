@@ -399,6 +399,7 @@ const STRINGS = {
     pulseTipWkProjected: (p, tm, v, lim) => `Official ${p}% at ${tm}, carried forward with ${v} counted since, against the weekly limit the feed implies (~${lim}).`,
     pulseTipWkSinceReset: (lim) => `No reading since the weekly reset yet. Carried forward from 0% with last week's limit (~${lim}).`,
     pulseTipWkOfficial: (p, tm) => `Official ${p}% at ${tm}.`,
+    pulseTipCounted:    'Counted: input and output. Anthropic also counts the context a session sends along, so percentage and tokens do not match directly.',
     pulseTipNoFeed:     'Counted tokens only. Token Usage shows a percentage for a limit only when it comes from Anthropic, via the feed.',
     pulseTipToday:      'Your usual day is your average per active day. Anthropic has no daily limit.',
     pulseMoreWeekly:    (n, p, tm) => `${n} weekly limit: ${p}% (official, as of ${tm})`,
@@ -540,6 +541,7 @@ const STRINGS = {
     pulseTipWkProjected: (p, tm, v, lim) => `Offiziell ${p}% um ${tm}, weitergerechnet mit ${v}, die seitdem gezählt wurden, gegen das Wochenlimit, das der Feed ergibt (~${lim}).`,
     pulseTipWkSinceReset: (lim) => `Seit dem Wochen-Reset noch keine Ablesung. Ab 0% hochgerechnet mit dem Limit der Vorwoche (~${lim}).`,
     pulseTipWkOfficial: (p, tm) => `Offiziell ${p}% um ${tm}.`,
+    pulseTipCounted:    'Gezählt werden Input und Output. Den mitgeschickten Kontext rechnet Anthropic mit, deshalb passen Prozent und Tokens nicht direkt zusammen.',
     pulseTipNoFeed:     'Nur gezählte Tokens. Token Usage zeigt einen Prozentwert für ein Limit nur, wenn er von Anthropic kommt, über den Feed.',
     pulseTipToday:      'Dein üblicher Tag ist dein Schnitt pro aktivem Tag. Ein Tageslimit gibt es bei Anthropic nicht.',
     pulseMoreWeekly:    (n, p, tm) => `${n}-Wochenlimit: ${p}% (offiziell, Stand ${tm})`,
@@ -770,6 +772,7 @@ const STRINGS = {
     pulseTipWkProjected: (p, tm, v, lim) => `Officiel ${p}% à ${tm}, prolongé avec ${v} comptés depuis, par rapport à la limite hebdomadaire déduite du flux (~${lim}).`,
     pulseTipWkSinceReset: (lim) => `Aucun relevé depuis la réinitialisation hebdomadaire. Extrapolé à partir de 0% avec la limite de la semaine précédente (~${lim}).`,
     pulseTipWkOfficial: (p, tm) => `Officiel ${p}% à ${tm}.`,
+    pulseTipCounted:    `Comptés : entrée et sortie. Anthropic compte aussi le contexte qu'une session envoie avec chaque requête, donc pourcentage et tokens ne correspondent pas directement.`,
     pulseTipNoFeed:     `Tokens comptés uniquement. Token Usage n'affiche un pourcentage de limite que s'il vient d'Anthropic, via le flux.`,
     pulseTipToday:      `Votre journée habituelle est votre moyenne par jour actif. Anthropic n'a pas de limite journalière.`,
     pulseMoreWeekly:    (n, p, tm) => `Limite hebdomadaire ${n} : ${p}% (officiel, relevé ${tm})`,
@@ -1000,6 +1003,7 @@ const STRINGS = {
     pulseTipWkProjected: (p, tm, v, lim) => `Ufficiale ${p}% alle ${tm}, proseguito con ${v} contati da allora, rispetto al limite settimanale che risulta dal feed (~${lim}).`,
     pulseTipWkSinceReset: (lim) => `Nessuna lettura dal reset settimanale. Proiettato da 0% con il limite della settimana precedente (~${lim}).`,
     pulseTipWkOfficial: (p, tm) => `Ufficiale ${p}% alle ${tm}.`,
+    pulseTipCounted:    `Contati: input e output. Anthropic conta anche il contesto che una sessione invia con ogni richiesta, quindi percentuale e token non coincidono direttamente.`,
     pulseTipNoFeed:     'Solo token contati. Token Usage mostra una percentuale di limite solo se viene da Anthropic, tramite il feed.',
     pulseTipToday:      'La tua giornata tipica è la tua media per giorno attivo. Anthropic non ha un limite giornaliero.',
     pulseMoreWeekly:    (n, p, tm) => `Limite settimanale ${n}: ${p}% (ufficiale, lettura ${tm})`,
@@ -1233,6 +1237,7 @@ const STRINGS = {
     pulseTipWkProjected: (p, tm, v, lim) => `Oficial ${p}% a las ${tm}, continuado con ${v} contados desde entonces, frente al límite semanal que resulta del feed (~${lim}).`,
     pulseTipWkSinceReset: (lim) => `Aún no hay lectura desde el reinicio semanal. Proyectado desde 0% con el límite de la semana anterior (~${lim}).`,
     pulseTipWkOfficial: (p, tm) => `Oficial ${p}% a las ${tm}.`,
+    pulseTipCounted:    'Contado: entrada y salida. Anthropic también cuenta el contexto que una sesión envía con cada solicitud, así que porcentaje y tokens no coinciden directamente.',
     pulseTipNoFeed:     'Solo tokens contados. Token Usage muestra un porcentaje de límite solo si viene de Anthropic, a través del feed.',
     pulseTipToday:      'Tu día habitual es tu media por día activo. Anthropic no tiene límite diario.',
     pulseMoreWeekly:    (n, p, tm) => `Límite semanal de ${n}: ${p}% (oficial, lectura ${tm})`,
@@ -1795,16 +1800,27 @@ function computeFocusScore(sessMap, reuseRatio, activeDays, totalReqs) {
 //   input + output + write  median 2.03 M   CV 0.949
 //
 // A grid search over both weights (0…2.0 for write, 0…0.5 for read) landed on exactly 0.00 and
-// 0.00. Cache tokens do not count toward the 5-hour limit at all in this data, and 308 K matches
-// the figure Björn remembered from the earlier analysis.
+// 0.00 (Design/Waehrungstest.js).
 //
-// So the weights are zero — kept as named constants rather than deleted, because they are an
-// empirical result that could change if Anthropic changes its accounting. Re-run the test
-// (Design/Waehrungstest.js) before touching them.
+// Correction (29.10.2026): until today this comment concluded from that test that cache tokens
+// do not count toward the 5-hour limit at all. That was wrong, and the public texts already said
+// so since 2.1.0; only this comment was left behind. The test compared the candidate currencies
+// with each other, never with the official percentages. Measured against those (feed, 37
+// readings, 6 to 17 October 2026), cache writes clearly count toward the 5-hour window and cache
+// reads a little: a weighted figure came within 8.4 points on the 5h window, the input + output
+// projection from the feed was 27.5 points off. Example 29.10.2026: 52 % official after only
+// 19.9 K input + output, because each of the 23 requests carried about 900 K tokens of context.
 //
-// Note this is the LIMIT currency, not a usage total. Cache volume is real and is shown in full
-// in the per-type rows (Input / Output / C.Write / C.Read) — it just does not move you toward
-// the wall, so it must not appear in a figure that claims to say how close the wall is.
+// The weights stay zero anyway, for a different reason: since 2.5 the plugin shows a limit
+// percentage only when it comes from Anthropic, so no displayed percentage depends on them. They
+// define what the plugin COUNTS next to a limit (tokens under the rings, the span of limit hits,
+// the weekly carry-forward between two official readings). The weighted figure stays a research
+// result in Design/Statusline-pruefen.js, not part of the display.
+//
+// Note this is the counted currency, not a usage total. Cache volume is real and is shown in full
+// in the per-type rows (Input / Output / C.Write / C.Read). Because Anthropic counts the context a
+// session sends along, the tokens next to a limit do not match its percentage directly, and the
+// UI says so (pulseTipCounted in the sidebar, the hero note in the Dashboard, help #rate-limits).
 const W_CACHE_WRITE = 0;
 const W_CACHE_READ  = 0;
 
@@ -3069,7 +3085,7 @@ class AnthropicUsageView extends obsidian.ItemView {
       items.push({ lbl: t('limitPulse5h'), val: wp.window5h, pct: h5.pct, verdict: bandedVerdict(h5.pct, LIMIT_BANDS),
         center: `${Math.round(h5.pct)}<tspan font-size="7.5">%</tspan>`,
         lines: [t('pulseRead', at(h5.readAt))].concat(h5.tokSince > 0 ? [t('pulseSince', fmtTokens(h5.tokSince))] : []),
-        tip: t('pulseTip5h', Math.round(h5.pct), at(h5.readAt), fmtTokens(h5.tokSince || 0)) });
+        tip: t('pulseTip5h', Math.round(h5.pct), at(h5.readAt), fmtTokens(h5.tokSince || 0)) + '\n' + t('pulseTipCounted') });
     } else {
       items.push({ lbl: t('limitPulse5h'), val: wp.window5h, pct: 0, verdict: 'neutral', center: '–', empty: true,
         lines: [off.hasFeed ? t('pulseNoReading5h') : t('pulseNoFeed')].concat(h5Reset ? [h5Reset] : []),
@@ -3101,10 +3117,10 @@ class AnthropicUsageView extends obsidian.ItemView {
           : [t('pulseSinceReset')];
       items.push({ lbl: t('limitPulseWeek'), val: wp.weekSoFar, pct: wk.pct, verdict: bandedVerdict(wk.pct, LIMIT_BANDS),
         center: `${approx ? '≈' : ''}${Math.round(wk.pct)}<tspan font-size="7.5">%</tspan>`, lines,
-        tip: wk.state === 'projected'
+        tip: (wk.state === 'projected'
           ? t('pulseTipWkProjected', Math.round(wk.basePct), at(wk.readAt), fmtTokens(wk.tokSince), fmtTokens(wp.weekLimit))
           : wk.state === 'sinceReset' ? t('pulseTipWkSinceReset', fmtTokens(wp.weekLimit))
-          : t('pulseTipWkOfficial', Math.round(wk.pct), at(wk.readAt)) });
+          : t('pulseTipWkOfficial', Math.round(wk.pct), at(wk.readAt))) + '\n' + t('pulseTipCounted') });
     } else {
       items.push({ lbl: t('limitPulseWeek'), val: wp.weekSoFar, pct: 0, verdict: 'neutral', center: '–', empty: true,
         lines: [off.hasFeed ? t('pulseNoReadingWk') : t('pulseNoFeed')].concat(wkReset ? [wkReset] : []),
@@ -5109,7 +5125,7 @@ function renderLimitHero(){
     +   '<div class="hero-head">'
     +     '<div>'
     +       '<div class="hero-title">AI Budget Status</div>'
-    +       '<div class="hero-title-note">Percentages only from Anthropic (via the feed), always with the time of the reading. Tokens are counted locally.</div>'
+    +       '<div class="hero-title-note">Percentages only from Anthropic (via the feed), always with the time of the reading. Tokens are counted locally: input and output. Anthropic also counts the context a session sends along, so percentage and tokens do not match directly.</div>'
     +     '</div>'
     +     '<div class="hero-zone" style="border-color:'+zoneCol+'55;background:'+zoneCol+'14">'
     +       '<span class="hero-zone-dot" style="background:'+zoneCol+'"></span>'

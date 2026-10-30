@@ -459,6 +459,7 @@ Percentages now come from Anthropic only. This is the biggest change since 2.0, 
 - **The poll script tries once more after a timeout.** A scheduled run right after the computer wakes from sleep often has no network yet
 - **The poll script can run only while you work.** With `--only-when-active` it asks only if Claude Code wrote to its logs in the last 20 minutes. A 5-hour window is open then anyway, so the script practically never opens one itself and can run every 30 minutes. With three fixed polls a day the 5-hour ring stayed grey most of the time; we noticed that in our own test before the release
 - **A hint under the rings when there is no feed,** with a link to the setup
+- **Percentage and tokens, explained.** The tooltips of the 5-hour and weekly rings and the note above the Dashboard panels now say why the two do not match directly: the tokens count input and output, Anthropic also counts the context a session sends along
 - **The help page is rebuilt and now also in Italian.** One layout for English, German, French, Spanish and Italian, the same sections in every language, a contents bar beside the text. Up to 2.1 the German and French pages lacked four sections, the Spanish page was a shorter text of its own, and all pages still named the model colours from before 2.0
 
 **Known limits**
