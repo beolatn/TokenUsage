@@ -22,9 +22,14 @@
 // Only while you work (2.5):  node ~/.claude/ratelimit-poll.js --only-when-active
 // Asks only if Claude Code wrote to its session logs in the last 20 minutes (or --only-when-active=N
 // for N minutes), otherwise it exits without a request. While you work a 5-hour window is open anyway,
-// so the poll practically never opens one of its own, and you can schedule it every 30 minutes. That
-// keeps the plugin's 5-hour ring showing an official value most of the time you work. Costs one tiny
-// request per run while active.
+// so the poll practically never opens one of its own, and you can schedule it every hour (2.5.1; up to
+// 2.5.0 we suggested every 30 minutes, twice the requests for little gain). That keeps the plugin's
+// 5-hour ring showing an official value most of the time you work. Costs one tiny request per run
+// while active.
+//
+// Windows (2.5.1): node.exe is a console program, so Task Scheduler opens a console window on every
+// run, even on runs that ask nothing. Start it as  conhost.exe --headless "<node.exe>" "<this script>"
+// to keep the window away (tested on Windows 11, not documented by Microsoft). Commands in the guide.
 //
 // MIT License, same as the plugin.
 

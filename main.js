@@ -313,7 +313,7 @@ const STRINGS = {
     settingLang:      'Language',
     settingLangDesc:  'Display language for the plugin UI. Takes effect immediately.',
     settingRefresh:   'Auto-refresh interval (seconds)',
-    settingRefreshDesc: 'Fallback polling interval. The file watcher triggers immediately on every new Claude response — this is the backup.',
+    settingRefreshDesc: 'Fallback polling interval. The file watcher picks up new Claude responses by itself, within 30 seconds at the latest. This is only the backup.',
     settingReport:    'Report path in vault',
     settingReportDesc: 'Vault-relative path — the file lives inside your vault folder, right alongside your notes, and is overwritten on every click. Use the button to open its location.',
     settingVaultReport:    'Vault report path in vault',
@@ -455,7 +455,7 @@ const STRINGS = {
     settingLang:      'Sprache',
     settingLangDesc:  'Anzeigesprache für die Plugin-Oberfläche. Funktioniert ohne Neustart.',
     settingRefresh:   'Automatisches Aktualisierungsintervall (in Sekunden)',
-    settingRefreshDesc: 'Fallback-Abfrageintervall. Der Datei-Watcher Prozess reagiert sofort auf jede neue Claude-Antwort — dies ist eine Absicherung des Prozesses. Normalerweise muss hier nichts geändert werden.',
+    settingRefreshDesc: 'Fallback-Abfrageintervall. Der Datei-Watcher erkennt neue Claude-Antworten von selbst, spätestens nach 30 Sekunden. Dies ist nur die Absicherung. Normalerweise muss hier nichts geändert werden.',
     settingReport:    'Report-Pfad im Vault',
     settingReportDesc: 'Vault-relativer Pfad — die Datei liegt in deinem Vault-Ordner, direkt neben deinen Notizen, und wird bei jeder erneuten Ausführung überschrieben. Über den Button öffnest du den Ablageort.',
     settingVaultReport:    'Vault-Report-Pfad im Vault',
@@ -686,7 +686,7 @@ const STRINGS = {
     settingLang:      'Langue',
     settingLangDesc:  'Langue d\'affichage de l\'interface du plugin. Prend effet immédiatement.',
     settingRefresh:   'Intervalle d\'actualisation automatique (secondes)',
-    settingRefreshDesc: 'Intervalle d\'interrogation de secours. Le processus de surveillance des fichiers réagit immédiatement à chaque nouvelle réponse de Claude — il s\'agit de la solution de secours.',
+    settingRefreshDesc: 'Intervalle d\'interrogation de secours. La surveillance des fichiers détecte d\'elle-même les nouvelles réponses de Claude, au plus tard après 30 secondes. Ceci n\'est que la solution de secours.',
     settingReport:    'Chemin du rapport dans le vault',
     settingReportDesc: 'Chemin relatif au vault — le fichier se trouve dans votre dossier de vault, juste à côté de vos notes, et est remplacé à chaque clic. Utilisez le bouton pour ouvrir son emplacement.',
     settingVaultReport:    'Chemin du rapport vault dans le vault',
@@ -917,7 +917,7 @@ const STRINGS = {
     settingLang:      'Lingua',
     settingLangDesc:  'Lingua di visualizzazione per l\'interfaccia del plugin. Ha effetto immediato.',
     settingRefresh:   'Intervallo di aggiornamento automatico (secondi)',
-    settingRefreshDesc: 'Intervallo di polling di riserva. Il processo di monitoraggio dei file reagisce immediatamente a ogni nuova risposta di Claude — questa è la soluzione di riserva.',
+    settingRefreshDesc: 'Intervallo di polling di riserva. Il monitoraggio dei file rileva da solo le nuove risposte di Claude, al più tardi dopo 30 secondi. Questa è solo la soluzione di riserva.',
     settingReport:    'Percorso del report nel vault',
     settingReportDesc: 'Percorso relativo al vault — il file si trova nella cartella del tuo vault, accanto alle tue note, e viene sovrascritto a ogni clic. Usa il pulsante per aprirne la posizione.',
     settingVaultReport:    'Percorso del report vault nel vault',
@@ -1151,7 +1151,7 @@ const STRINGS = {
     settingLang:      'Idioma',
     settingLangDesc:  'Idioma de la interfaz del plugin. Se aplica de inmediato.',
     settingRefresh:   'Intervalo de actualización automática (segundos)',
-    settingRefreshDesc: 'Intervalo de sondeo de reserva. El vigilante de archivos reacciona de inmediato a cada nueva respuesta de Claude — esto es solo el respaldo.',
+    settingRefreshDesc: 'Intervalo de sondeo de reserva. El vigilante de archivos detecta por sí solo las nuevas respuestas de Claude, a más tardar en 30 segundos. Esto es solo el respaldo.',
     settingReport:    'Ruta del informe en el vault',
     settingReportDesc: 'Ruta relativa al vault — el archivo vive dentro de tu carpeta del vault, junto a tus notas, y se sobrescribe con cada clic. Usa el botón para abrir su ubicación.',
     settingVaultReport:    'Ruta del informe de proyectos en el vault',
@@ -2330,65 +2330,169 @@ function getAllSessionFiles() {
   return files.sort((a, b) => b.mtime - a.mtime);
 }
 
-function parseUsageFromFile(filePath, minTimestamp, fileSize) {
-  const entries          = [];
-  const seenResponses    = new Map(); // message.id|requestId → index in entries (dedup, see pass 2)
-  const synthetic        = []; // assistant/<synthetic> entries — written by CC after each compaction
-  const compactions      = []; // system/compact_boundary — authoritative compaction data (pre/postTokens)
-  const apiErrors        = []; // system/api_error — connection or auth failures
-  const aiTitles         = {}; // sessionId → human-readable session title from ai-title entries
-  const rateLimitEvents  = []; // assistant/<synthetic> with error:"rate_limit" — actual session/weekly limit hits
-  let fullContent  = '';
-  let chunkContent = '';
-  let usedChunk    = false;
-  // Vault/Root breakdown (01.09.2026, revised) — the first cwd seen anywhere in the file
-  // (chronologically earliest line) is the session's actual start directory. Individual messages
-  // can drift away from it later (e.g. a Bash tool call temporarily cd's into a subfolder), but
-  // the session-start cwd stays a stable "which vault/root" anchor for the whole file. Checked in
-  // both passes below so large/active files (tail-chunk mode) still catch it from the head block.
-  let rootCwd = null;
+// ── Parse cache (2.5.1, 03.11.2026) ──────────────────────────────
+// Up to 2.5.0 every refresh read and parsed every session log in the retention window again,
+// synchronously on Obsidian's main thread, and small files even twice (a first pass over the
+// whole file only to find ai-title and the first cwd). Measured on Björn's machine: 245 files,
+// 1.09 GB, 3.8 to 4.0 s per refresh. While Claudian was working, the file watcher fired one
+// every 4 to 6 s, so Obsidian stood still most of the time. Our mistake, not noticed before.
+//
+// Now each file is parsed once and kept here. An unchanged file (same size, same mtime) is not
+// read at all. A file that only grew, the normal case for the active session because Claude Code
+// appends to its logs, is read from where the last read stopped. Anything else (smaller, same
+// size but newer, different first bytes) is parsed from scratch. Only complete lines are taken,
+// so a line Claude Code is still writing is picked up on the next read instead of being lost.
+const _parseCache = new Map(); // path -> { size, mtime, minTs, offset, head, st }
+const HEAD_CHECK_BYTES = 256;
+const WATCH_MIN_GAP_MS = 30_000; // shortest gap between two refreshes caused by the file watcher
+
+function newParseState() {
+  return {
+    entries:         [],
+    keys:            [],        // dedup key per entry, same index as entries ('' = none)
+    seenResponses:   new Map(), // message.id|requestId → index in entries (dedup, see parseTextInto)
+    synthetic:       [], // assistant/<synthetic> entries — written by CC after each compaction
+    compactions:     [], // system/compact_boundary — authoritative compaction data (pre/postTokens)
+    apiErrors:       [], // system/api_error — connection or auth failures
+    aiTitles:        {}, // sessionId → human-readable session title from ai-title entries
+    rateLimitEvents: [], // assistant/<synthetic> with error:"rate_limit" — actual session/weekly limit hits
+    // Vault/Root breakdown (01.09.2026, revised) — the first cwd seen anywhere in the file
+    // (chronologically earliest line) is the session's actual start directory. Individual
+    // messages can drift away from it later (e.g. a Bash tool call temporarily cd's into a
+    // subfolder), but the session-start cwd stays a stable "which vault/root" anchor.
+    rootCwd:         null,
+  };
+}
+
+// First cwd in the text. Stops at the first hit, which is normally within the first lines,
+// so it costs next to nothing even on a large file. Replaces the old full first pass.
+function findFirstCwd(text) {
+  let pos = 0;
+  while (pos < text.length) {
+    let nl = text.indexOf('\n', pos);
+    if (nl < 0) nl = text.length;
+    const line = text.slice(pos, nl);
+    pos = nl + 1;
+    if (!line.includes('"cwd"')) continue;
+    try { const o = JSON.parse(line); if (o.cwd) return o.cwd; } catch(e) {}
+  }
+  return null;
+}
+
+// Drops everything older than minTs, for cached files when the retention window has moved on
+// (daysAgoTs changes at midnight). Rebuilds the dedup map, because its indices shift.
+function pruneParseState(st, minTs) {
+  const entries = [], keys = [];
+  st.seenResponses = new Map();
+  for (let i = 0; i < st.entries.length; i++) {
+    if (st.entries[i].timestamp < minTs) continue;
+    if (st.keys[i]) st.seenResponses.set(st.keys[i], entries.length);
+    entries.push(st.entries[i]);
+    keys.push(st.keys[i]);
+  }
+  st.entries = entries;
+  st.keys    = keys;
+  // Same rule as at parse time: only drop what is known to be older.
+  const keep = x => !(x.timestamp < minTs);
+  st.synthetic       = st.synthetic.filter(keep);
+  st.compactions     = st.compactions.filter(keep);
+  st.apiErrors       = st.apiErrors.filter(keep);
+  st.rateLimitEvents = st.rateLimitEvents.filter(keep);
+}
+
+function readFileRange(filePath, start, end) {
+  const len = Math.max(0, end - start);
+  const buf = Buffer.alloc(len);
+  const fd  = fs.openSync(filePath, 'r');
+  let got = 0;
   try {
-    if (fileSize > 1_500_000 && minTimestamp && minTimestamp > daysAgoTs(1)) {
-      // Large active file: read only the tail for token entries (performance).
-      // ai-title is written at the START of a session — read a small head block too.
-      const chunk  = Math.min(600_000, fileSize);
-      const buf    = Buffer.alloc(chunk);
-      const fd     = fs.openSync(filePath, 'r');
-      fs.readSync(fd, buf, 0, chunk, fileSize - chunk);
-      fs.closeSync(fd);
-      chunkContent = buf.toString('utf8');
-      const nl     = chunkContent.indexOf('\n');
-      if (nl > -1) chunkContent = chunkContent.slice(nl + 1);
-      // Also read first 8 kB to capture ai-title (always near the top)
-      const headBuf = Buffer.alloc(8192);
-      const fdH     = fs.openSync(filePath, 'r');
-      const read    = fs.readSync(fdH, headBuf, 0, 8192, 0);
-      fs.closeSync(fdH);
-      fullContent = headBuf.toString('utf8', 0, read);
-      usedChunk = true;
+    while (got < len) {
+      const n = fs.readSync(fd, buf, got, len - got, start + got);
+      if (n <= 0) break;
+      got += n;
+    }
+  } finally { fs.closeSync(fd); }
+  return got < len ? buf.subarray(0, got) : buf;
+}
+
+// Parses the complete lines of buf (bytes from file offset `base`) into st and returns the new
+// offset. An unfinished last line stays unread for the next call, unless it already parses on
+// its own (a file that simply ends without a trailing newline).
+function consumeBuffer(st, buf, base, minTimestamp, fresh) {
+  let upto = buf.lastIndexOf(0x0a) + 1;
+  if (upto < buf.length) {
+    const tail = buf.subarray(upto).toString('utf8');
+    if (!tail.trim()) upto = buf.length;
+    else { try { JSON.parse(tail); upto = buf.length; } catch(e) {} }
+  }
+  if (upto > 0) {
+    const text = buf.subarray(0, upto).toString('utf8');
+    if (fresh && !st.rootCwd) st.rootCwd = findFirstCwd(text);
+    parseTextInto(st, text, minTimestamp);
+  }
+  return base + upto;
+}
+
+function parseFileFresh(filePath, fileSize, mtime, minTimestamp) {
+  const st = newParseState();
+  let buf = Buffer.alloc(0);
+  try { buf = fs.readFileSync(filePath); } catch(e) {}
+  // Never past the size the caller saw: whatever was written since is read on the next refresh.
+  if (typeof fileSize === 'number' && buf.length > fileSize) buf = buf.subarray(0, fileSize);
+  const offset = consumeBuffer(st, buf, 0, minTimestamp, true);
+  return {
+    size: buf.length, mtime, minTs: minTimestamp, offset,
+    head: Buffer.from(buf.subarray(0, Math.min(HEAD_CHECK_BYTES, buf.length))),
+    st,
+  };
+}
+
+function headUnchanged(filePath, head) {
+  if (!head || !head.length) return false;
+  try { return readFileRange(filePath, 0, head.length).equals(head); } catch(e) { return false; }
+}
+
+// Called with mtime (refresh): cached and incremental. Called without (check scripts, one-off
+// readers): one full parse, nothing kept. Returns the same shape either way.
+function parseUsageFromFile(filePath, minTimestamp, fileSize, mtime) {
+  const min = minTimestamp || 0;
+  if (mtime === undefined) return parseFileFresh(filePath, fileSize, mtime, min).st;
+  let c = _parseCache.get(filePath);
+  // Window grew (retention raised): lines older than the old cut-off were skipped, start over.
+  if (c && c.minTs > min) c = null;
+  try {
+    if (c && fileSize === c.size && mtime === c.mtime) {
+      // unchanged, nothing to read
+    } else if (c && fileSize > c.size && headUnchanged(filePath, c.head)) {
+      c.offset = consumeBuffer(c.st, readFileRange(filePath, c.offset, fileSize), c.offset, min, false);
+      c.size = fileSize;
+      c.mtime = mtime;
     } else {
-      fullContent = fs.readFileSync(filePath, 'utf8');
+      c = null;
     }
+  } catch(e) { c = null; }
+  if (!c) {
+    c = parseFileFresh(filePath, fileSize, mtime, min);
+    _parseCache.set(filePath, c);
+  }
+  if (min > c.minTs) { pruneParseState(c.st, min); c.minTs = min; }
+  return c.st;
+}
 
-    // Pass 1 — head block only (ai-title lives near the top)
-    for (const line of fullContent.split('\n')) {
+// Forgets files that are gone or out of the window, so the cache never outgrows the logs.
+function parseCacheKeepOnly(paths) {
+  for (const k of [..._parseCache.keys()]) if (!paths.has(k)) _parseCache.delete(k);
+}
+
+function parseTextInto(st, text, minTimestamp) {
+  const { entries, keys, seenResponses, synthetic, compactions, apiErrors, aiTitles, rateLimitEvents } = st;
+  let rootCwd = st.rootCwd;
+  {
+    for (const line of text.split('\n')) {
       if (!line.trim()) continue;
       try {
         const obj = JSON.parse(line);
-        if (!rootCwd && obj.cwd) rootCwd = obj.cwd;
-        if (obj.type === 'ai-title' && obj.aiTitle && obj.sessionId) {
-          aiTitles[obj.sessionId] = obj.aiTitle;
-        }
-      } catch(e) {}
-    }
-
-    // Pass 2 — main content (tail chunk for large files, full content otherwise)
-    const mainContent = usedChunk ? chunkContent : fullContent;
-    for (const line of mainContent.split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const obj = JSON.parse(line);
-        if (!rootCwd && obj.cwd) rootCwd = obj.cwd; // fallback if the head-block pass found nothing
+        if (!rootCwd && obj.cwd) rootCwd = obj.cwd; // fallback if findFirstCwd found nothing
         const sid = obj.sessionId || '';
 
         // ── assistant entries: token usage + synthetic markers
@@ -2460,6 +2564,7 @@ function parseUsageFromFile(filePath, minTimestamp, fileSize) {
             seenResponses.set(dedupKey, entries.length);
           }
           entries.push(entry);
+          keys.push(dedupKey);
           continue;
         }
 
@@ -2500,8 +2605,8 @@ function parseUsageFromFile(filePath, minTimestamp, fileSize) {
 
       } catch(e) {}
     }
-  } catch(e) {}
-  return { entries, synthetic, compactions, apiErrors, aiTitles, rateLimitEvents };
+  }
+  st.rootCwd = rootCwd;
 }
 
 // ── View ──────────────────────────────────────────────────────────
@@ -2549,11 +2654,22 @@ class AnthropicUsageView extends obsidian.ItemView {
     const latest = (files.find(f => !f.sub) || files[0]).path;
     try {
       this._watchedFile = latest;
-      this._watcher = fs.watch(latest, { persistent: false }, () => {
-        if (this._debounce) clearTimeout(this._debounce);
-        this._debounce = setTimeout(() => this.refresh(), 600);
-      });
+      this._watcher = fs.watch(latest, { persistent: false }, () => this._scheduleWatchRefresh());
     } catch(e) {}
+  }
+
+  // At most one watcher refresh per WATCH_MIN_GAP_MS (2.5.1). Up to 2.5.0 every write to the
+  // session log restarted a 600 ms debounce, so a busy session (Claudian writes on every tool
+  // call) triggered a full refresh every few seconds. Now the first write after a quiet spell
+  // still shows up after 600 ms; while writes keep coming, one refresh follows at the latest
+  // WATCH_MIN_GAP_MS after the previous one, and that one sees everything written until then.
+  // A timer already waiting is kept, never pushed back, so a steady stream cannot starve it.
+  // The refresh button and the interval are not throttled.
+  _scheduleWatchRefresh() {
+    if (this._debounce) return;
+    const since = Date.now() - (this._lastRefreshAt || 0);
+    const wait  = Math.max(600, WATCH_MIN_GAP_MS - since);
+    this._debounce = setTimeout(() => { this._debounce = null; this.refresh(); }, wait);
   }
 
   _teardownWatcher() {
@@ -2562,6 +2678,7 @@ class AnthropicUsageView extends obsidian.ItemView {
   }
 
   async refresh() {
+    this._lastRefreshAt = Date.now();
     if (!this.data) this.render();
     try {
       const now           = Date.now();
@@ -2581,16 +2698,23 @@ class AnthropicUsageView extends obsidian.ItemView {
       let allApiErrors        = [];
       let allRateLimitEvents  = [];
       let sessionTitles       = {};
+      // 2.5.1: with mtime the parser serves unchanged files from its cache and reads only what
+      // was appended to the others, see "Parse cache". push instead of concat, so 245 files do
+      // not copy the growing list 245 times.
+      const inWindow = new Set();
+      const addAll = (dst, src) => { for (const x of src) dst.push(x); };
       for (const f of files) {
         if (f.mtime < day30Ts) break;
-        const parsed    = parseUsageFromFile(f.path, day30Ts, f.size);
-        all             = all.concat(parsed.entries);
-        allSynthetic    = allSynthetic.concat(parsed.synthetic);
-        allCompactions  = allCompactions.concat(parsed.compactions);
-        allApiErrors    = allApiErrors.concat(parsed.apiErrors);
-        allRateLimitEvents = allRateLimitEvents.concat(parsed.rateLimitEvents);
+        inWindow.add(f.path);
+        const parsed    = parseUsageFromFile(f.path, day30Ts, f.size, f.mtime);
+        addAll(all, parsed.entries);
+        addAll(allSynthetic, parsed.synthetic);
+        addAll(allCompactions, parsed.compactions);
+        addAll(allApiErrors, parsed.apiErrors);
+        addAll(allRateLimitEvents, parsed.rateLimitEvents);
         Object.assign(sessionTitles, parsed.aiTitles);
       }
+      parseCacheKeepOnly(inWindow);
       all.sort((a, b) => b.timestamp - a.timestamp);
 
       // Self-calibration (v2.0): derive the weekly reset from the most recent weekly-limit
@@ -6032,6 +6156,13 @@ class AnthropicUsageSettingTab extends obsidian.PluginSettingTab {
 // with each release that has user-facing highlights worth surfacing (skip pure bugfix
 // releases — see AnthropicUsagePlugin._maybeShowWhatsNew()).
 const WHATS_NEW_HIGHLIGHTS = {
+  '2.5.1': [
+    'Obsidian no longer freezes while Claude Code is busy. Up to 2.5.0 the sidebar read all your session logs again on every refresh, and during a busy session that happened every few seconds. With a long history (on our machine 245 files, 1.1 GB) each refresh blocked Obsidian for about four seconds. That was our mistake.',
+
+    'Now each log is read once, and after that only what was added. A refresh takes about a tenth of a second instead of four. While a session is busy, the sidebar refreshes at most every 30 seconds.',
+
+    'On Windows, the optional poll script no longer has to open a console window. If you scheduled it with our guide, the help page has a short command that switches your task over.',
+  ],
   '2.5.0': [
     'Percentages now come from Anthropic only. Up to 2.1 we estimated the 5-hour window and the week. Measured against the official values for eleven days, the 5-hour estimate was off by 36 points on average, and when a window was officially full our ring stood anywhere between 61 and 217 percent. That was our decision, and it was wrong.',
 

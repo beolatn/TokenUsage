@@ -85,7 +85,9 @@ The script [`ratelimit-poll.js`](ratelimit-poll.js) asks Claude Code once, witho
 - **Every run is a real request.** It sends the prompt `ok` to Haiku, the smallest model, and saves no session. It counts toward your usage like any request, just very little.
 - **It can open a 5-hour window.** If no window is open at that moment, this request opens one, and your next window then starts at the poll time instead of at your first real message. Schedule it for times you usually work anyway.
 - **Fixed times: not too often.** Three times a day is plenty for the week, which the plugin carries forward between readings. The 5-hour ring only shows a reading from the current window, so with three polls a day it is grey most of the time; that is the honest state, not an error.
-- **Or only while you work (since 2.5, recommended for the 5-hour ring).** Started with `--only-when-active`, the script first checks whether Claude Code wrote to its session logs in the last 20 minutes (`--only-when-active=30` for 30 minutes) and otherwise exits without a request. While you work a 5-hour window is open anyway, so the poll practically never opens one of its own, and you can schedule it every 30 minutes. The 5-hour ring then shows an official value most of the time you work. Each run while active is one tiny request; idle runs cost nothing.
+- **Or only while you work (since 2.5, recommended for the 5-hour ring).** Started with `--only-when-active`, the script first checks whether Claude Code wrote to its session logs in the last 20 minutes (`--only-when-active=30` for 30 minutes) and otherwise exits without a request. While you work a 5-hour window is open anyway, so the poll practically never opens one of its own, and you can schedule it every hour. The 5-hour ring then shows an official value from the current hour most of the time you work. Each run while active is one tiny request; idle runs cost nothing.
+- **Every hour is enough** (since 2.5.1). Up to 2.5.0 this guide suggested every 30 minutes. That is twice the requests and, on Windows, twice the console windows, for a reading that is at most half an hour fresher. If you want it anyway, set the interval to 30 minutes.
+- **Windows: without a console window** (since 2.5.1). `node.exe` is a console program, so Task Scheduler opens a console window on every run, even on runs that ask nothing. Up to 2.5.0 our commands below did exactly that, every 30 minutes. Started through `conhost.exe --headless`, the run stays invisible. We tested this on Windows 11. Two things you should know: Microsoft does not document this switch, and some security software reports hidden console starts as suspicious. If yours does, or the task stops working, use the plain start shown under the commands and accept the short window.
 - **It tries once more after a timeout** (since 2.5). A run right after the computer wakes from sleep often has no network yet, so the script waits a minute and tries again, once.
 
 **1. Copy the script** to `~/.claude/ratelimit-poll.js` (Windows: `C:\Users\<you>\.claude\ratelimit-poll.js`).
@@ -100,39 +102,65 @@ It prints `5h 12% | week 34%` on success. If it reports that the Claude Code CLI
 
 **3. Schedule it.**
 
-**Windows (Task Scheduler)**, in PowerShell, three runs a day at 12:00, 17:00 and 22:00, catching up after the computer was off:
+**Windows (Task Scheduler)**, in PowerShell, three runs a day at 12:00, 17:00 and 22:00, catching up after the computer was off, without a console window:
 
 ```powershell
 $node     = (Get-Command node).Source
 $script   = "$env:USERPROFILE\.claude\ratelimit-poll.js"
-$action   = New-ScheduledTaskAction -Execute $node -Argument "`"$script`""
+$action   = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless `"$node`" `"$script`""
 $triggers = '12:00','17:00','22:00' | ForEach-Object { New-ScheduledTaskTrigger -Daily -At $_ }
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
 Register-ScheduledTask -TaskName 'TokenUsageLimitPoll' -Action $action -Trigger $triggers -Settings $settings -Description 'Token Usage: official rate-limit percentages'
 ```
 
-**Windows, only while you work** (every 30 minutes from 07:00 to midnight, asks only when Claude Code was active):
+**Windows, only while you work** (every hour from 07:00 to 23:00, asks only when Claude Code was active, without a console window):
 
 ```powershell
 $node    = (Get-Command node).Source
 $script  = "$env:USERPROFILE\.claude\ratelimit-poll.js"
-$action  = New-ScheduledTaskAction -Execute $node -Argument "`"$script`" --only-when-active"
+$action  = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless `"$node`" `"$script`" --only-when-active"
 $trigger = New-ScheduledTaskTrigger -Daily -At '07:00'
-$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' -RepetitionInterval (New-TimeSpan -Minutes 30) -RepetitionDuration (New-TimeSpan -Hours 17)).Repetition
+$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Hours 17)).Repetition
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
 Register-ScheduledTask -TaskName 'TokenUsageLimitPoll' -Action $action -Trigger $trigger -Settings $settings -Description 'Token Usage: official rate-limit percentages while you work'
 ```
 
-**macOS and Linux (cron)**: open `crontab -e` and add one line. Cron runs with a minimal PATH, so use full paths (find them with `which node` and `which claude`). Fixed times:
+**Plain start, with a short console window on every run** (if your security software objects to `--headless` or the task does not run): in either block, use this `$action` line instead.
+
+```powershell
+$action  = New-ScheduledTaskAction -Execute $node -Argument "`"$script`" --only-when-active"
+```
+
+Leave out `--only-when-active` for the fixed times.
+
+**Already scheduled it with an earlier version of this guide?** Up to 2.5.0 the commands above started `node.exe` directly, so a console window opened on every run. This keeps your task, your times and your options and only adds the hidden start:
+
+```powershell
+$old = (Get-ScheduledTask -TaskName 'TokenUsageLimitPoll').Actions[0]
+if ($old.Execute -notmatch 'conhost') {
+  $new = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless `"$($old.Execute)`" $($old.Arguments)"
+  Set-ScheduledTask -TaskName 'TokenUsageLimitPoll' -Action $new
+}
+```
+
+And to ask every hour instead of every 30 minutes:
+
+```powershell
+$trigger = New-ScheduledTaskTrigger -Daily -At '07:00'
+$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At '07:00' -RepetitionInterval (New-TimeSpan -Hours 1) -RepetitionDuration (New-TimeSpan -Hours 17)).Repetition
+Set-ScheduledTask -TaskName 'TokenUsageLimitPoll' -Trigger $trigger
+```
+
+**macOS and Linux (cron)**: open `crontab -e` and add one line. Cron runs with a minimal PATH, so use full paths (find them with `which node` and `which claude`). Cron opens no window. Fixed times:
 
 ```
 0 12,17,22 * * * CLAUDE_BIN=/full/path/to/claude /full/path/to/node /Users/<you>/.claude/ratelimit-poll.js
 ```
 
-Or only while you work, every 30 minutes:
+Or only while you work, every hour:
 
 ```
-*/30 7-23 * * * CLAUDE_BIN=/full/path/to/claude /full/path/to/node /Users/<you>/.claude/ratelimit-poll.js --only-when-active
+0 7-23 * * * CLAUDE_BIN=/full/path/to/claude /full/path/to/node /Users/<you>/.claude/ratelimit-poll.js --only-when-active
 ```
 
 On Linux the home folder is usually `/home/<you>`. On macOS you can use launchd instead of cron if you prefer; the command is the same.
@@ -172,7 +200,9 @@ On Linux the home folder is usually `/home/<you>`. On macOS you can use launchd 
 | Status line shows `rate limits: n/a` | Claude Code sent something the script could not read | Update Claude Code; if it persists, open an issue |
 | Poll: "Claude Code CLI not found" | `claude` not on the PATH of the scheduled task | Set `CLAUDE_BIN` to the full path |
 | Poll: "No rate_limit_event in the output" | Not logged in, or logged in with an API key | Run `claude` once by hand and log in with your subscription |
-| 5-hour ring grey with "no reading in this window yet" | No reading since the current window opened | Normal between polls at fixed times. Run the poll once by hand, then refresh, or schedule it every 30 minutes with `--only-when-active` |
+| 5-hour ring grey with "no reading in this window yet" | No reading since the current window opened | Normal between polls at fixed times. Run the poll once by hand, then refresh, or schedule it every hour with `--only-when-active` |
+| Windows: a console window opens on every poll | The task starts `node.exe` directly (our guide up to 2.5.0) | Switch to the hidden start, see "Already scheduled it with an earlier version of this guide?" |
+| Windows: task with `--headless` does not run, or your security software reports it | The switch is not documented by Microsoft and may be blocked | Use the plain start and accept the short window |
 | Week ring grey with "no reading this week yet" | No reading since the weekly reset, and none last week either | Wait for the next reading or run the poll once by hand |
 
 ## Privacy

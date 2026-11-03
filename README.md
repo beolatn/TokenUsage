@@ -75,7 +75,7 @@ Example JSONL entry:
 
 The plugin aggregates all four token fields across sessions and time ranges. All calculations run locally on your device.
 
-A live file watcher detects new activity the moment Claude Code writes a response. A configurable fallback polling interval runs in parallel.
+A live file watcher picks up new activity as Claude Code writes it: the first response after a quiet spell shows up within a second, and while a session is busy the sidebar refreshes at most every 30 seconds. Each log is parsed once and then only read where it grew, so a refresh stays fast even with a long history (since 2.5.1). A configurable fallback polling interval runs in parallel.
 
 **This directory is global, not per-vault.** `~/.claude/projects/` lives in your user profile, outside any Obsidian vault, and contains one subfolder per working directory Claude Code has ever been run in. Token Usage reads all of them and aggregates the totals. This means:
 
@@ -101,7 +101,7 @@ Claude Code knows the official rate-limit percentages of your plan, the numbers 
 **Which script you need depends on where you work:**
 
 - **In a terminal:** [`ratelimit-statusline.js`](extras/ratelimit-statusline.js) as your Claude Code status line. Free, and readings come in while you work.
-- **Inside Obsidian or another client without a status line:** [`ratelimit-poll.js`](extras/ratelimit-poll.js), run on a schedule. Recommended since 2.5: every 30 minutes with `--only-when-active`, so it asks only while you work and the 5-hour ring shows an official value most of that time. Each run that asks is a tiny real request; at fixed times it opens a 5-hour window if none is open at that moment.
+- **Inside Obsidian or another client without a status line:** [`ratelimit-poll.js`](extras/ratelimit-poll.js), run on a schedule. Recommended since 2.5: every hour with `--only-when-active` (since 2.5.1; we suggested every 30 minutes before), so it asks only while you work and the 5-hour ring shows an official value most of that time. Each run that asks is a tiny real request; at fixed times it opens a 5-hour window if none is open at that moment. On Windows the guide starts it without a console window (since 2.5.1).
 
 **You need:** a Pro or Max subscription, **Node.js** (check with `node --version`; Claude Code installed with the native installer does not bring it along), a recent Claude Code version, and for the poll the Claude Code CLI.
 
@@ -426,6 +426,21 @@ MIT License — see the [LICENSE](LICENSE) file for details.
 ---
 
 ## Changelog
+
+### v2.5.1 — November 2026
+
+A patch for two mistakes of ours: the sidebar made Obsidian freeze while Claude Code was busy, and our poll guide for Windows opened a console window every 30 minutes.
+
+**Fixed**
+
+- **Obsidian froze for seconds while Claude Code was busy.** On every refresh the sidebar read and parsed all session logs in Claude Code's retention window again, on Obsidian's main thread, and smaller files even twice. The file watcher started such a refresh after every write to the session log, and a busy session writes many times a minute. On our own machine (245 log files, 1.1 GB, 120 days of retention) one refresh took about four seconds and came every four to six seconds, so Obsidian stood still most of the time. The longer your history and the busier your session, the worse it got, and with Claude Code running inside Obsidian it was at its worst. That was our mistake, and we had not noticed it before. Now each log is parsed once and kept in memory: unchanged files are not read again, and a log that grew is read only from where the last read stopped. Measured on the same machine: about 110 ms per refresh instead of four seconds. Only the first refresh after starting Obsidian still reads everything, once
+- **Our Windows guide for the poll opened a console window on every run.** The Task Scheduler commands started `node.exe` directly. `node.exe` is a console program, so Windows opened a window every time, with the recommended variant every 30 minutes, even on runs that asked nothing. The guide now starts it through `conhost.exe --headless`, which keeps the window away, and has one block that switches an existing task over without changing anything else. We tested this on Windows 11. Microsoft does not document this switch, and some security software reports hidden console starts as suspicious; for that case the plain start stays in the guide
+
+**Changed**
+
+- **While a session is busy, the sidebar refreshes at most every 30 seconds.** Up to 2.5.0 every write restarted a short wait of 0.6 seconds, so a busy session set off one refresh after another. The first response after a quiet spell still shows up after 0.6 seconds; while writes keep coming, the next refresh follows at the latest 30 seconds after the previous one and includes everything written until then. The refresh button and the interval in the settings are not throttled
+- **The settings text no longer says the file watcher reacts immediately to every response,** in all five languages. With the 30-second limit that is no longer true; it now says "within 30 seconds at the latest". The help page says the same
+- **Every hour is enough for the poll that runs only while you work.** We recommended every 30 minutes. That is twice the requests for a reading that is at most half an hour fresher. The guide, the cron line, the script header and the help page now say every hour
 
 ### v2.5.0 — October 2026
 
